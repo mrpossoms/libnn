@@ -4,8 +4,6 @@ dependencies:
     - sudo apt-get update; sudo apt-get install build-essential
 jobs:
   build:
-    # docker:
-    #   - image: debian:stretch
     steps:
       - checkout
       - run:
