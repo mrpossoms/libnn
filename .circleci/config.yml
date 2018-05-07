@@ -5,7 +5,7 @@ jobs:
     # working_directory: ~/demo_project
 
     docker:
-      - image: comodal/alpine-gcc-make:latest
+      - image: walberla/buildenv-ubuntu-gcc
         environment:
 
     steps:
