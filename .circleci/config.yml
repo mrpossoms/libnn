@@ -7,7 +7,7 @@ jobs:
       - checkout
       - run:
           name: Tooling
-          command: sudo apt-get install gcc make -y
+          command: apt-get install gcc make -y
       - run:
           name: Tests
           command: make test
