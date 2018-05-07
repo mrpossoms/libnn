@@ -5,7 +5,7 @@ jobs:
     # working_directory: ~/demo_project
 
     docker:
-      - image: walberla/buildenv-ubuntu-gcc
+      - image: walberla/buildenv-ubuntu-gcc:4.8
         environment:
 
     steps:
