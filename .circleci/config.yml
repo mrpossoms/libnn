@@ -1,11 +1,16 @@
 version: 2
+
 jobs:
-  dependencies:
-    pre:
-      - sudo apt-get update; sudo apt-get install build-essential
   build:
+    # working_directory: ~/demo_project
+
+    docker:
+      - image: comodal/alpine-gcc-make:latest
+        environment:
+
     steps:
       - checkout
+
       - run:
-          name: Tests
-          command: make test
+          name: Compile tests
+          command: make tests
