@@ -1,13 +1,13 @@
 version: 2
+dependencies:
+  pre:
+    - sudo apt-get update; sudo apt-get install build-essential
 jobs:
   build:
-    docker:
-      - image: debian:stretch
+    # docker:
+    #   - image: debian:stretch
     steps:
       - checkout
-      - run:
-          name: Tooling
-          command: apt-get install gcc make -y
       - run:
           name: Tests
           command: make test
