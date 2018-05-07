@@ -1,5 +1,7 @@
 # libnn
 
+Tests: [![CircleCI](https://circleci.com/gh/mrpossoms/libnn.svg?style=svg)](https://circleci.com/gh/mrpossoms/libnn)
+
 libnn is an intuitive feed-forward neural network library designed with embedded linux systems in mind. It's intended to instantiate a trained model for performing predictions in the field.
 
 ## Requirements
