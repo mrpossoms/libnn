@@ -6,7 +6,7 @@ uint8_t* indexer(mat_t* src, int row, int col, size_t* size)
 {
 	int cols = src->dims[1];
 	*size = sizeof(float);
-	return (void*)(src->_data.f + (row * cols) + col);
+	return (void*)(src->data.f + (row * cols) + col);
 }
 
 int conv_pool(void)
@@ -21,7 +21,7 @@ int conv_pool(void)
 		.dims = { 4, 4, 1 },
 		._rank = 3,
 		._size = 16,
-		._data = src_buf,
+		.data = src_buf,
 	};
 
 	mat_t pool = {
@@ -39,7 +39,7 @@ int conv_pool(void)
 	nn_conv_max_pool(&pool, &src, op);
 	for (int num = 1; num <= 4; ++num)
 	{
-		assert(pool._data.f[num-1] == num);
+		assert(pool.data.f[num-1] == num);
 	}
 
 

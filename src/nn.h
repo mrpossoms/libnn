@@ -38,7 +38,7 @@ struct mat_t {
 		void* ptr;
 		float* f;
 		double* d;
-	} _data;
+	} data;
 };
 typedef struct mat_t mat_t;
 
@@ -178,6 +178,15 @@ void nn_mat_f(mat_t* R, mat_t* M, float (*func)(float));
  * @return Matrix instance.
  */
 mat_t nn_mat_load(const char* path);
+
+/**
+ * Allocates and performs initialization for a feed forward network.
+ * @param  layers - Pointer to an array of described layers, with the final
+ *                  layer being empty and uninitialized.
+ * @param  x      - Pointer to feature vector to use as input.
+ * @return          0 on success
+ */
+int nn_init(nn_layer_t* li, mat_t* x_in);
 
 /**
  * Allocates matrices needed for the fully connected layer, and also

@@ -8,7 +8,7 @@
 #include <unistd.h>
 #include <string.h>
 
-#define e2f(M, i, j) ((M)->_data.f[(M)->dims[1] * i + j])
+#define e2f(M, i, j) ((M)->data.f[(M)->dims[1] * i + j])
 
 static uint8_t* default_indexer(mat_t* src, int row, int col, size_t* size)
 {
@@ -24,7 +24,7 @@ static uint8_t* default_indexer(mat_t* src, int row, int col, size_t* size)
 	}
 
 	int cols = src->dims[1];
-	return (uint8_t*)(src->_data.f + (row * cols) + col);
+	return (uint8_t*)(src->data.f + (row * cols) + col);
 }
 
 
@@ -59,17 +59,17 @@ int nn_mat_init(mat_t* M)
 		total_elements *= M->dims[i];
 	}
 
-	if (M->_data.ptr == NULL)
+	if (M->data.ptr == NULL)
 	{
-		M->_data.ptr = calloc(total_elements, sizeof(float));
+		M->data.ptr = calloc(total_elements, sizeof(float));
 
 		// Check for allocation failure
-		if (!M->_data.ptr) return -2;
+		if (!M->data.ptr) return -2;
 
 		// perform fill initialization
 		for (int i = total_elements; i--;)
 		{
-			(M->_data.f)[i] = M->fill(M);
+			(M->data.f)[i] = M->fill(M);
 		}
 	}
 
@@ -102,10 +102,10 @@ void nn_mat_mul_conv(mat_t* R, mat_t* A, mat_t* B)
 			dot += e2f(A, 0, i) * e2f(B, f, i);
 		}
 
-		R->_data.f[f] = dot;
+		R->data.f[f] = dot;
 	}
 
-	// memcpy(R->_data.f, &d, sizeof(d));
+	// memcpy(R->data.f, &d, sizeof(d));
 }
 
 
@@ -136,7 +136,7 @@ void nn_mat_mul(mat_t* R, mat_t* A, mat_t* B)
 		}
 	}
 
-	// memcpy(R->_data.f, &d, sizeof(d));
+	// memcpy(R->data.f, &d, sizeof(d));
 }
 
 
@@ -205,25 +205,63 @@ void nn_mat_f(mat_t* R, mat_t* M, float (*func)(float))
 
 	for (int i = R->_size; i--;)
 	{
-		R->_data.f[i] = func((float)M->_data.f[i]);
+		R->data.f[i] = func((float)M->data.f[i]);
 	}
 }
 
 
 int nn_mat_max(mat_t* M)
 {
-	float max = M->_data.f[0];
+	float max = M->data.f[0];
 	int max_i = 0;
 	for (int i = M->_size; i--;)
 	{
-		if (M->_data.f[i] > max)
+		if (M->data.f[i] > max)
 		{
-			max = M->_data.f[i];
+			max = M->data.f[i];
 			max_i = i;
 		}
 	}
 
 	return max_i;
+}
+
+static int is_conv_layer(nn_layer_t* l)
+{
+	if (!l) return -1;
+	return l->filter.kernel.w && l->filter.kernel.h;
+}
+
+static int is_empty_layer(nn_layer_t* l)
+{
+	return l == NULL || l->w.data.ptr == NULL;
+}
+
+int nn_init(nn_layer_t* li, mat_t* x_in)
+{
+	if (!x_in) return -1;
+
+	mat_t* A = x_in;
+
+	while (!is_empty_layer(li))
+	{
+		int res = 0;
+		if (is_conv_layer(li))
+		{
+			res = nn_conv_init(li, A);
+		}
+		else
+		{
+			res = nn_fc_init(li, A);
+		}
+
+		if (res) return res;
+
+		A = li->A;
+		li++;
+	}
+
+	return 0;
 }
 
 
@@ -370,8 +408,8 @@ int nn_conv_init(nn_layer_t* li, mat_t* a_in)
 
 void nn_conv_patch(mat_t* patch, mat_t* src, conv_op_t op)
 {
-	assert(patch->_data.ptr);
-	assert(src->_data.ptr);
+	assert(patch->data.ptr);
+	assert(src->data.ptr);
 
 	for (int row = op.kernel.h; row--;)
 	for (int col = op.kernel.w; col--;)
@@ -385,7 +423,7 @@ void nn_conv_patch(mat_t* patch, mat_t* src, conv_op_t op)
 		                                       ci,
 		                                       &pix_size);
 
-		uint8_t* patch_bytes = (uint8_t*)patch->_data.ptr;
+		uint8_t* patch_bytes = (uint8_t*)patch->data.ptr;
 		memcpy(patch_bytes + (pix_size * i), pixel_chan, pix_size);
 	}
 }
@@ -424,7 +462,7 @@ void nn_conv_ff(nn_layer_t* li, mat_t* a_in)
 		size_t feature_depth;
 		float* z_pile = (float*)op.pixel_indexer(&li->_CA, p_row, p_col, &feature_depth);
 
-		memcpy(z_pile, li->_z._data.f, feature_depth);
+		memcpy(z_pile, li->_z.data.f, feature_depth);
 	}
 
 	// activate
@@ -452,7 +490,7 @@ void nn_conv_max_pool(mat_t* pool, mat_t* src, conv_op_t op)
 	assert(pool->_rank == src->_rank);
 	for (int i = 2; i--;) assert(exp_size[i] == pool->dims[i]);
 
-	memset(pool->_data.f, 0, sizeof(float) * pool->_size);
+	memset(pool->data.f, 0, sizeof(float) * pool->_size);
 
 	// For each pile of channels in the pool...
 	for (int p_row = pool->dims[0]; p_row--;)
@@ -509,14 +547,14 @@ mat_t nn_mat_load(const char* path)
 
 	// read the entire matrix
 	size_t M_size = sizeof(float) * M._size;
-	if (read(fd, M._data.ptr, M_size) != M_size) goto abort;
+	if (read(fd, M.data.ptr, M_size) != M_size) goto abort;
 
 	close(fd);
 
 	return M;
 abort:
-	free(M._data.ptr);
-	M._data.ptr = NULL;
+	free(M.data.ptr);
+	M.data.ptr = NULL;
 	close(fd);
 	exit(-13);
 	return M;
@@ -551,7 +589,7 @@ void nn_act_softmax(mat_t* z)
 {
 	nn_mat_f(z, z, _softmax_num_f);
 	float sum = 0;
-	for (int i = z->_size; i--;) sum += z->_data.f[i];
+	for (int i = z->_size; i--;) sum += z->data.f[i];
 	float denom = 1.f / sum ;
 	nn_mat_scl_e(z, z, denom);
 }
@@ -561,9 +599,9 @@ mat_t* nn_predict(nn_layer_t* l, mat_t* x)
 {
 	mat_t* a_1 = x;
 
-	for (;l->w._data.ptr; ++l)
+	for (;!is_empty_layer(l); ++l)
 	{
-		if (l->filter.kernel.w)
+		if (is_conv_layer(l))
 		{
 			nn_conv_ff(l, a_1);
 		}

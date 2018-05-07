@@ -16,7 +16,7 @@ uint8_t* indexer(mat_t* src, int row, int col, size_t* size)
 	}
 
 	int cols = src->dims[1];
-	return (uint8_t*)(src->_data.f + (row * cols) + col);
+	return (uint8_t*)(src->data.f + (row * cols) + col);
 }
 
 
@@ -31,7 +31,7 @@ int conv_patch(void)
 		.dims = { 3, 3, 1 },
 		._rank = 3,
 		._size = 9,
-		._data.f = x0_s
+		.data.f = x0_s
 	};
 
 	float x1_s[] = {
@@ -43,7 +43,7 @@ int conv_patch(void)
 		.dims = { 3, 3, 1 },
 		._rank = 3,
 		._size = 9,
-		._data.f = x1_s
+		.data.f = x1_s
 	};
 
 	float w_s[] = {
@@ -57,7 +57,7 @@ int conv_patch(void)
 	nn_layer_t conv = {
 		.w = {
 			.dims = { 3, 3, 1, 1 },
-			._data.f = w_s
+			.data.f = w_s
 		},
 		.filter = {
 			.kernel = { 3, 3 },
@@ -75,12 +75,12 @@ int conv_patch(void)
 // };/
 
 	nn_conv_ff(&conv, &X0);
-	Log("A[0] -> %f\n", 1, conv.A->_data.f[0]);
-	assert(conv.A->_data.f[0] > 0.5);
+	Log("A[0] -> %f\n", 1, conv.A->data.f[0]);
+	assert(conv.A->data.f[0] > 0.5);
 
 	nn_conv_ff(&conv, &X1);
-	Log("A[0] -> %f\n", 1, conv.A->_data.f[0]);
-	assert(conv.A->_data.f[0] <= 0.5);
+	Log("A[0] -> %f\n", 1, conv.A->data.f[0]);
+	assert(conv.A->data.f[0] <= 0.5);
 
 	return 0;
 }

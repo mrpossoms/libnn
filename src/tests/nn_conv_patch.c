@@ -6,7 +6,7 @@ uint8_t* indexer(mat_t* src, int row, int col, size_t* size)
 {
 	int cols = src->dims[1];
 	*size = sizeof(float);
-	return (void*)(src->_data.f + (row * cols) + col);
+	return (void*)(src->data.f + (row * cols) + col);
 }
 
 int conv_patch(void)
@@ -21,7 +21,7 @@ int conv_patch(void)
 		.dims = { 4, 4 },
 		._rank = 2,
 		._size = 16,
-		._data = src_buf,
+		.data = src_buf,
 	};
 
 	mat_t patch = {
@@ -50,7 +50,7 @@ int conv_patch(void)
 
 		for (int i = patch._size; i--;)
 		{
-			if (patch._data.f[i] != num)
+			if (patch.data.f[i] != num)
 			{
 				return -num;
 			}

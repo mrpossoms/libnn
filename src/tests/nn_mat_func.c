@@ -18,7 +18,7 @@ int mat_mul(void)
 		.dims = { 1, 3 },
 		._rank = 2,
 		._size = 3,
-		._data = i,
+		.data = i,
 	};
 
 	mat_t R = {
@@ -30,8 +30,8 @@ int mat_mul(void)
 
 	for (int i = 3; i--;)
 	{
-		if (R._data.f[i] != 0.5) {
-			Log("R[%d] -> %f\n", 0, i, R._data.f[i]);
+		if (R.data.f[i] != 0.5) {
+			Log("R[%d] -> %f\n", 0, i, R.data.f[i]);
 			return -1;
 		}
 	}

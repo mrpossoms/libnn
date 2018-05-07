@@ -3,7 +3,7 @@ $(eval OS := $(shell uname))
 CC=gcc
 CFLAGS=-g --std=c99 -D_XOPEN_SOURCE=500 -ftree-vectorize
 SRCS=nn.c
-INC=-I./src -I./src/BNO055_driver -I./src/linmath
+INC=-I./src
 LINK=-lm -lpthread
 TST_SRC=nn_mat_mul nn_mat_func nn_conv_patch nn_conv_max_pool nn_conv nn_mat_load fc_model_test
 

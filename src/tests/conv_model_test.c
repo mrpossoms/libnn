@@ -20,7 +20,7 @@ int model_test(void)
 {
 	mat_t x = {
 		.dims = { 16, 16, 3 },
-		._data.f = hay
+		.data.f = hay
 	};
 	nn_mat_init(&x);
 
@@ -103,9 +103,9 @@ int model_test(void)
 	}
 
 	Log("%f %f %f", 1,
-	A_1._data.f[0],
-	A_1._data.f[1],
-	A_1._data.f[2]);
+	A_1.data.f[0],
+	A_1.data.f[1],
+	A_1.data.f[2]);
 
 	// mat_t fcw0 = nn_mat_load("model/dense.kernel");
 	// mat_t fcb0 = nn_mat_load("model/dense.bias");

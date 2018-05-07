@@ -6,7 +6,7 @@ int mat_load(void)
 {
 	mat_t M = nn_mat_load("data/dense.kernel");
 
-	assert(M._data.ptr);
+	assert(M.data.ptr);
 	assert(M.dims[0] == 768);
 	assert(M.dims[1] == 128);
 	assert(M._size == 98304);

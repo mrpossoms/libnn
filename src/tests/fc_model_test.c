@@ -9,7 +9,7 @@ int model_test(void)
 {
 	mat_t x = {
 		.dims = { 1, 768 },
-		._data.f = hay
+		.data.f = hay
 	};
 
 	nn_layer_t L[] = {
@@ -28,15 +28,14 @@ int model_test(void)
 
 	// Allocate and setup layers and matrices
 	assert(nn_mat_init(&x) == 0);
-	assert(nn_fc_init(L + 0, &x) == 0);
-	assert(nn_fc_init(L + 1, L[0].A) == 0);
+	assert(nn_init(L, &x) == 0);
 
 	mat_t* y = nn_predict(L, &x);
 
 	Log("%f %f %f", 1,
-	y->_data.f[0],
-	y->_data.f[1],
-	y->_data.f[2]);
+	y->data.f[0],
+	y->data.f[1],
+	y->data.f[2]);
 
 	// mat_t fcw0 = nn_mat_load("model/dense.kernel");
 	// mat_t fcb0 = nn_mat_load("model/dense.bias");

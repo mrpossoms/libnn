@@ -13,7 +13,7 @@ int mat_mul(void)
 		.dims = { 3, 3 },
 		._rank = 2,
 		._size = 9,
-		._data = i,
+		.data = i,
 	};
 
 	float m[] = {
@@ -25,7 +25,7 @@ int mat_mul(void)
 		.dims = { 3, 3 },
 		._rank = 2,
 		._size = 9,
-		._data = m,
+		.data = m,
 	};
 
 	mat_t R = {
@@ -37,7 +37,7 @@ int mat_mul(void)
 
 	for (int i = 9; i--;)
 	{
-		if (m[i] != R._data.f[i])
+		if (m[i] != R.data.f[i])
 			return -1;
 	}
 
