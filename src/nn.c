@@ -9,6 +9,7 @@
 #include <string.h>
 
 #define e2f(M, i, j) ((M)->data.f[(M)->dims[1] * i + j])
+#define e2f_p(M, i, j) ((M)->data.f + ((M)->dims[1] * i + j))
 
 static uint8_t* default_indexer(mat_t* src, int row, int col, size_t* size)
 {
@@ -108,7 +109,6 @@ void nn_mat_mul_conv(mat_t* R, mat_t* A, mat_t* B)
 	// memcpy(R->data.f, &d, sizeof(d));
 }
 
-
 void nn_mat_mul(mat_t* R, mat_t* A, mat_t* B)
 {
 	// MxN * NxO = MxO
@@ -128,11 +128,42 @@ void nn_mat_mul(mat_t* R, mat_t* A, mat_t* B)
 	for (int ar = A->dims[0]; ar--;)
 	for (int bc = B->dims[1]; bc--;)
 	{
-		e2f(R, ar, bc) = 0;
+		float* res = &e2f(R, ar, bc);
+		float* row = &e2f(A, ar, 0);
 
-		for (int i = B->dims[0]; i--;)
+		res[0] = 0;
+
+		#define BATCH4(off) *res += row[(off)] * e2f(B, (off), bc);\
+						*res += row[(off) + 1] * e2f(B, (off) + 1, bc);\
+						*res += row[(off) + 2] * e2f(B, (off) + 2, bc);\
+						*res += row[(off) + 3] * e2f(B, (off) + 3, bc);\
+
+		for (int i = B->dims[0]; i;)
 		{
-			e2f(R, ar, bc) += e2f(A, ar, i) * e2f(B, i, bc);
+			if (i > 16)
+			{
+				i -= 16;
+				BATCH4(i);
+				BATCH4(i + 4);
+				BATCH4(i + 8);
+				BATCH4(i + 12);
+			}
+			if (i > 8)
+			{
+				i -= 8;
+				BATCH4(i);
+				BATCH4(i + 4);
+			}
+			if (i > 4)
+			{
+				i -= 4;
+				BATCH4(i);
+			}
+			else
+			{
+				i -= 1;
+				*res += row[i] * e2f(B, i, bc);
+			}
 		}
 	}
 

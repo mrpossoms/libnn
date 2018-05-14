@@ -30,8 +30,19 @@ int model_test(void)
 	assert(nn_mat_init(&x) == 0);
 	assert(nn_init(L, &x) == 0);
 
-	mat_t* y = nn_predict(L, &x);
+	mat_t* y;
+	time_t start = time(NULL);
+	while(time(NULL) == start) usleep(10000);
+	start = time(NULL);
 
+	int cycles = 0;
+	while(time(NULL) == start)
+	{
+		y = nn_predict(L, &x);
+		++cycles;
+	}
+
+	Log("%d cps", 1, cycles);
 	Log("%f %f %f", 1,
 	y->data.f[0],
 	y->data.f[1],
