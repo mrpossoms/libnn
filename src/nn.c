@@ -109,6 +109,14 @@ void nn_mat_mul_conv(mat_t* R, mat_t* A, mat_t* B)
 	// memcpy(R->data.f, &d, sizeof(d));
 }
 
+static inline void _BATCH4(float* res, float* row, int i, int bc, mat_t* B)
+{
+	*res += row[i + 0] * B->data.f[B->dims[1] * (i + 0) + bc];
+	*res += row[i + 1] * B->data.f[B->dims[1] * (i + 1) + bc];
+	*res += row[i + 2] * B->data.f[B->dims[1] * (i + 2) + bc];
+	*res += row[i + 3] * B->data.f[B->dims[1] * (i + 3) + bc];
+}
+
 void nn_mat_mul(mat_t* R, mat_t* A, mat_t* B)
 {
 	// MxN * NxO = MxO
@@ -128,43 +136,53 @@ void nn_mat_mul(mat_t* R, mat_t* A, mat_t* B)
 	for (int ar = A->dims[0]; ar--;)
 	for (int bc = B->dims[1]; bc--;)
 	{
-		float* res = &e2f(R, ar, bc);
+		float res = 0;
 		float* row = &e2f(A, ar, 0);
 
-		res[0] = 0;
-
-		#define BATCH4(off) *res += row[(off)] * e2f(B, (off), bc);\
-						*res += row[(off) + 1] * e2f(B, (off) + 1, bc);\
-						*res += row[(off) + 2] * e2f(B, (off) + 2, bc);\
-						*res += row[(off) + 3] * e2f(B, (off) + 3, bc);\
+		// #define e2f(M, i, j) ((M)->data.f[(M)->dims[1] * i + j])
+		#define BATCH4(off) { \
+			float b = ((B)->data.f[(B)->dims[1] * (off) + bc]);\
+			*res += row[(off) + 0] * b;\
+			*res += row[(off) + 1] * b;\
+			*res += row[(off) + 2] * b;\
+			*res += row[(off) + 3] * b;\
+		}\
 
 		for (int i = B->dims[0]; i;)
 		{
 			if (i > 16)
 			{
 				i -= 16;
-				BATCH4(i);
-				BATCH4(i + 4);
-				BATCH4(i + 8);
-				BATCH4(i + 12);
+				_BATCH4(&res, row, i, bc, B);
+				_BATCH4(&res, row, i + 4, bc, B);
+				_BATCH4(&res, row, i + 8, bc, B);
+				_BATCH4(&res, row, i + 12, bc, B);
 			}
-			if (i > 8)
+			else if (i > 8)
 			{
 				i -= 8;
-				BATCH4(i);
-				BATCH4(i + 4);
+				_BATCH4(&res, row, i, bc, B);
+				_BATCH4(&res, row, i + 4, bc, B);
 			}
-			if (i > 4)
+			else if (i >= 4)
 			{
 				i -= 4;
-				BATCH4(i);
+				// BATCH4(i);
+				// float b = (B->data.f[B->dims[1] * (off) + bc]);
+				// res += row[i + 0] * B->data.f[B->dims[1] * (i + 0) + bc];
+				// res += row[i + 1] * B->data.f[B->dims[1] * (i + 1) + bc];
+				// res += row[i + 2] * B->data.f[B->dims[1] * (i + 2) + bc];
+				// res += row[i + 3] * B->data.f[B->dims[1] * (i + 3) + bc];
+				_BATCH4(&res, row, i, bc, B);
 			}
 			else
 			{
 				i -= 1;
-				*res += row[i] * e2f(B, i, bc);
+				res += row[i] * e2f(B, i, bc);
 			}
 		}
+
+		e2f(R, ar, bc) = res;
 	}
 
 	// memcpy(R->data.f, &d, sizeof(d));
