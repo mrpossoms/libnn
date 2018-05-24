@@ -1,11 +1,11 @@
 $(eval OS := $(shell uname))
 
 CC=gcc
-CFLAGS=-g --std=c99 -D_XOPEN_SOURCE=500 -ftree-vectorize -O3
+CFLAGS=-g --std=c99 -D_XOPEN_SOURCE=500 -ftree-vectorize -O3 -Wno-implicit-function-declaration
 SRCS=nn.c
 INC=-I./src
 LINK=-lm -lpthread
-TST_SRC=nn_mat_mul nn_mat_func nn_conv_patch nn_conv_max_pool nn_conv nn_mat_load fc_model_test
+TST_SRC=nn_mat_mul nn_mat_func nn_conv_patch nn_conv_max_pool nn_conv nn_mat_load fc_model_test conv_model_test
 
 
 .PHONY all: static

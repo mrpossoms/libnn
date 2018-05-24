@@ -81,11 +81,11 @@ int model_test(void)
 		assert(nn_fc_init(L + i, (L+i-1)->A) == 0);
 	}
 
-	nn_conv_ff(&x, L + 0);
+	nn_conv_ff(L + 0, &x);
 
 	for (int i = 1; i < 3; ++i)
 	{
-		nn_conv_ff(L[i - 1].A, L + i);
+		nn_conv_ff(L + i, L[i - 1].A);
 	}
 
 	mat_t A_1 = *L[2].A;
