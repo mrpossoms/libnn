@@ -83,6 +83,40 @@ Matrices loaded by `nn_mat_load` are stored in a simple binary format. With a he
 
 ```
 
+If you happen to be a Tensorflow user, you could use the following function to store the weights and biases of a trained Estimator in the format described above.
+
+```Python
+def export_model(model):
+    for param_name in model.get_variable_names():
+        comps = param_name.split('/')
+
+        if len(comps) < 2: continue
+        if comps[-1] in ['kernel', 'bias']:
+            with open('/var/model/' + param_name.replace('/', '.'), mode='wb') as file:
+                param = model.get_variable_value(param_name)
+                shape = param.shape
+
+                # We will be converting the weight tensor into
+                # a matrix to make it usable in the predictor implementation
+                if len(shape) == 4:
+                    pass
+                    # shape = (shape[3], np.prod(shape[0:3]))
+
+                file.write(struct.pack('b', len(shape)))
+                for d in shape:
+                    file.write(struct.pack('i', d))
+
+                if len(param.shape) == 4:
+                    for f in range(param.shape[3]):
+                        filter = param[:,:,:,f].T
+
+                        for w in filter.flatten():
+                            file.write(struct.pack('f', w))
+                else:
+                    for w in param.flatten():
+                        file.write(struct.pack('f', w))
+```
+
 After the header, the remainder of the matrix consists of a number of 32 bit floats equivalent to the product of the dimensions in the header. The default matrix indexer assumes they are stored in row major order.
 
 ### _Making Predictions_
