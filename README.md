@@ -31,7 +31,7 @@ nn_mat_init(&M); // returns 0 on success
 
 ### _Network Declaration_
 
-A libnn neural network is composed of `nn_layer_t` instances, which in turn contain a handful full of matrices. When defining a network architecture there are only a few that you need to be concerned with. `w` the connection weights, `b` the biases, and `A`, a pointer to the vector of activations for that layer. The network should be defined as an array of `nn_layer_t` instances, with the final layer being empty to act as a terminator. The flow of activations follows the order of the layers defined in the array.
+A libnn neural network is composed of `nn_layer_t` instances, which in turn contain a handful of matrices. When defining a network architecture there are only a few that you need to be concerned with. `w` the connection weights, `b` the biases, and `A`, a pointer to the vector of activations for that layer. The network should be defined as an array of `nn_layer_t` instances, with the final layer being empty to act as a terminator. The flow of activations follows the order of the layers defined in the array.
 
 ```C
 mat_t x = {
