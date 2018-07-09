@@ -153,6 +153,7 @@ Matrices loaded by `nn_mat_load` are stored in a simple binary format. With a he
 [ ui8 num_dimensions | ui32 dim 0 | ... | ui32 dim num_dimensions - 1 ]
 
 ```
+After the header, the remainder of the matrix consists of a number of 32 bit floats equivalent to the product of the dimensions in the header. The default matrix indexer assumes they are stored in row major order.
 
 If you happen to be a Tensorflow user, you could use the following function to store the weights and biases of a trained Estimator in the format described above.
 
@@ -204,8 +205,6 @@ def serialize_matrix(m, fp):
     for e in m.flatten():
         fp.write(struct.pack('f', e))
 ```
-
-After the header, the remainder of the matrix consists of a number of 32 bit floats equivalent to the product of the dimensions in the header. The default matrix indexer assumes they are stored in row major order.
 
 ### _Making Predictions_
 
