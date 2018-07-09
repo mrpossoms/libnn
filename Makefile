@@ -1,7 +1,7 @@
 $(eval OS := $(shell uname))
 
 CC=gcc
-CFLAGS=-g --std=c99 -D_XOPEN_SOURCE=500 -ftree-vectorize -O3 -Wno-implicit-function-declaration
+CFLAGS=-g --std=c99 -D_XOPEN_SOURCE=500 -ftree-vectorize -O0 -Wno-implicit-function-declaration
 SRCS=nn.c
 INC=-I./src
 LINK=-lm -lpthread

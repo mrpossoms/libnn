@@ -25,7 +25,8 @@ static uint8_t* default_indexer(mat_t* src, int row, int col, size_t* size)
 	}
 
 	int cols = src->dims[1];
-	return (uint8_t*)(src->data.f + (row * cols) + col);
+	int depth = src->dims[2];
+	return (uint8_t*)(src->data.f + ((row * cols) + col) * depth);
 }
 
 
@@ -351,11 +352,17 @@ int nn_conv_init(nn_layer_t* li, mat_t* a_in)
 
 		if (res) return res;
 
-		mat_t b = {
-			.dims = { depth_out, 1 }
-		};
-		res += nn_mat_init(&b) * -20;
-		li->b = b;
+		if (li->b.data.ptr == NULL)
+		{
+			mat_t b = {
+				.dims = { depth_out, 1 }
+			};
+
+			li->b = b;
+		}
+
+		res += nn_mat_init(&li->b) * -20;
+
 
 		if (res) return res;
 	}
@@ -478,8 +485,8 @@ void nn_conv_ff(nn_layer_t* li, mat_t* a_in)
 	}
 
 	// For each pile of channels in the pool...
-	for (int p_row = li->_CA.dims[0]; p_row--;)
-	for (int p_col = li->_CA.dims[1]; p_col--;)
+	for (int p_row = 0; p_row < li->_CA.dims[0]; p_row++)
+	for (int p_col = 0; p_col < li->_CA.dims[1]; p_col++)
 	{
 		op.corner.row = p_row * op.stride.row - pad_row;
 		op.corner.col = p_col * op.stride.col - pad_col;
@@ -487,17 +494,18 @@ void nn_conv_ff(nn_layer_t* li, mat_t* a_in)
 		// get the convolution window from the input activation volume
 		nn_conv_patch(patch, a_in, op);
 
-		// apply the filter
+		// apply the convolution
 		nn_mat_mul(&li->_z, patch, &li->w);
 		nn_mat_add_e(&li->_z, &li->_z, &li->b);
 
+		// store the output cannels in the activation map for this layer
+		// which in turn will serve as the stimuli for the next layer
 		size_t feature_depth;
 		float* z_pile = (float*)op.pixel_indexer(&li->_CA, p_row, p_col, &feature_depth);
-
 		memcpy(z_pile, li->_z.data.f, feature_depth);
 	}
 
-	// activate
+	// pass activation map though activation function, elementwise
 	li->activation(&li->_CA);
 
 	// Apply pooling if specified

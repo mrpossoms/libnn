@@ -14,13 +14,13 @@ int model_test(void)
 
 	nn_layer_t L[] = {
 		{
-			.w = nn_mat_load("data/dense.kernel"),
-			.b = nn_mat_load("data/dense.bias"),
+			.w = nn_mat_load("data/model0/dense.kernel"),
+			.b = nn_mat_load("data/model0/dense.bias"),
 			.activation = nn_act_relu
 		},
 		{
-			.w = nn_mat_load("data/dense_1.kernel"),
-			.b = nn_mat_load("data/dense_1.bias"),
+			.w = nn_mat_load("data/model0/dense_1.kernel"),
+			.b = nn_mat_load("data/model0/dense_1.bias"),
 			.activation = nn_act_softmax
 		},
 		{}
