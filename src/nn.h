@@ -107,6 +107,7 @@ typedef struct {
 	mat_t _CA;
 	mat_t _conv_patch;
 	mat_t _z;
+	int _i;
 } nn_layer_t;
 
 

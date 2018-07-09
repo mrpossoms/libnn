@@ -11,6 +11,28 @@
 #define e2f(M, i, j) ((M)->data.f[(M)->dims[1] * i + j])
 #define e2f_p(M, i, j) ((M)->data.f + ((M)->dims[1] * i + j))
 
+void _print_v(mat_t* M)
+{
+	for (int i = 0; i < M->_size; i++)
+	{
+		printf("%0.3f ", M->data.f[i]);
+	}
+	printf("\n");
+}
+
+
+void _print_mat2(mat_t* M)
+{
+	for (int i = 0; i < M->_size; i++)
+	{
+		printf("%0.3f ", M->data.f[i]);
+
+		if (i % M->dims[0] == 0) printf("\n");
+	}
+	printf("\n");
+}
+
+
 static uint8_t* default_indexer(mat_t* src, int row, int col, size_t* size)
 {
 	static const float zeros[256] = {};
@@ -188,10 +210,9 @@ void nn_mat_mul_e(mat_t* R, mat_t* A, mat_t* B)
 	}
 
 
-	for (int r = A->dims[0]; r--;)
-	for (int c = A->dims[1]; c--;)
+	for (int i = A->_size; i--;)
 	{
-		e2f(R, r, c) = e2f(A, r, c) * e2f(B, r, c);
+		R->data.f[i] = A->data.f[i] * B->data.f[i];
 	}
 }
 
@@ -210,24 +231,21 @@ void nn_mat_add_e(mat_t* R, mat_t* A, mat_t* B)
 		exit(-1);
 	}
 
-	for (int r = A->dims[0]; r--;)
-	for (int c = A->dims[1]; c--;)
+	for (int i = A->_size; i--;)
 	{
-		e2f(R, r, c) = e2f(A, r, c) + e2f(B, r, c);
+		R->data.f[i] = A->data.f[i] + B->data.f[i];
 	}
 }
 
 
 void nn_mat_scl_e(mat_t* R, mat_t* M, float s)
 {
-	assert(R->_rank == M->_rank);
-	assert(M->_rank == R->_rank);
+	assert(R->_size == M->_size);
 	assert(R->dims[0] == M->dims[0] && R->dims[1] == M->dims[1]);
 
-	for (int r = M->dims[0]; r--;)
-	for (int c = M->dims[1]; c--;)
+	for (int i = M->_size; i--;)
 	{
-		e2f(R, r, c) = e2f(M, r, c) * s;
+		R->data.f[i] = M->data.f[i] * s;
 	}
 }
 
@@ -275,6 +293,7 @@ int nn_init(nn_layer_t* li, mat_t* x_in)
 	if (!x_in) return -1;
 
 	mat_t* A = x_in;
+	int i = 0;
 
 	while (!is_empty_layer(li))
 	{
@@ -291,6 +310,7 @@ int nn_init(nn_layer_t* li, mat_t* x_in)
 		if (res) return res;
 
 		A = li->A;
+		li->_i = i++;
 		li++;
 	}
 
@@ -450,8 +470,10 @@ void nn_conv_patch(mat_t* patch, mat_t* src, conv_op_t op)
 	assert(patch->data.ptr);
 	assert(src->data.ptr);
 
-	for (int row = op.kernel.h; row--;)
-	for (int col = op.kernel.w; col--;)
+	// for (int row = op.kernel.h; row--;)
+	// for (int col = op.kernel.w; col--;)
+	for (int row = 0; row < op.kernel.h; row++)
+	for (int col = 0; col < op.kernel.w; col++)
 	{
 		int ri = op.corner.row + row;
 		int ci = op.corner.col + col;
@@ -627,11 +649,14 @@ static float _softmax_num_f(float v)
 }
 void nn_act_softmax(mat_t* z)
 {
-	nn_mat_f(z, z, _softmax_num_f);
 	float sum = 0;
+
+	// set all z's elements to z_i = e^z_i
+	nn_mat_f(z, z, _softmax_num_f);
+
+	// now that all z are set to e^z, simply sum over all z's elements
 	for (int i = z->_size; i--;) sum += z->data.f[i];
-	float denom = 1.f / sum ;
-	nn_mat_scl_e(z, z, denom);
+	nn_mat_scl_e(z, z, 1.f / sum);
 }
 
 
