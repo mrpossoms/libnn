@@ -1,3 +1,20 @@
+/*
+ * This file is part of libnn.
+ *
+ * libnn is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * libnn is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with libnn.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
 #ifndef _NN_H
 #define _NN_H
 
@@ -104,10 +121,10 @@ typedef struct {
 	 */
 	mat_t* A;
 
-	mat_t _CA;
-	mat_t _conv_patch;
-	mat_t _z;
-	int _i;
+	mat_t _CA;         // convolutional activation map
+	mat_t _conv_patch; // convolutional kernel patch
+	mat_t _z;          // pre-activations for one conv operation
+	int _i;            // layer index
 } nn_layer_t;
 
 
