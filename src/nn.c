@@ -1,3 +1,20 @@
+/*
+ * This file is part of libnn.
+ *
+ * libnn is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * libnn is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with libnn.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
 #include "nn.h"
 #include <assert.h>
 #include <math.h>
@@ -10,6 +27,28 @@
 
 #define e2f(M, i, j) ((M)->data.f[(M)->dims[1] * i + j])
 #define e2f_p(M, i, j) ((M)->data.f + ((M)->dims[1] * i + j))
+
+void _print_v(mat_t* M)
+{
+	for (int i = 0; i < M->_size; i++)
+	{
+		printf("%0.3f ", M->data.f[i]);
+	}
+	printf("\n");
+}
+
+
+void _print_mat2(mat_t* M)
+{
+	for (int i = 0; i < M->_size; i++)
+	{
+		printf("%0.3f ", M->data.f[i]);
+
+		if (i % M->dims[0] == 0) printf("\n");
+	}
+	printf("\n");
+}
+
 
 static uint8_t* default_indexer(mat_t* src, int row, int col, size_t* size)
 {
@@ -25,7 +64,8 @@ static uint8_t* default_indexer(mat_t* src, int row, int col, size_t* size)
 	}
 
 	int cols = src->dims[1];
-	return (uint8_t*)(src->data.f + (row * cols) + col);
+	int depth = src->dims[2];
+	return (uint8_t*)(src->data.f + ((row * cols) + col) * depth);
 }
 
 
@@ -187,10 +227,9 @@ void nn_mat_mul_e(mat_t* R, mat_t* A, mat_t* B)
 	}
 
 
-	for (int r = A->dims[0]; r--;)
-	for (int c = A->dims[1]; c--;)
+	for (int i = A->_size; i--;)
 	{
-		e2f(R, r, c) = e2f(A, r, c) * e2f(B, r, c);
+		R->data.f[i] = A->data.f[i] * B->data.f[i];
 	}
 }
 
@@ -209,24 +248,21 @@ void nn_mat_add_e(mat_t* R, mat_t* A, mat_t* B)
 		exit(-1);
 	}
 
-	for (int r = A->dims[0]; r--;)
-	for (int c = A->dims[1]; c--;)
+	for (int i = A->_size; i--;)
 	{
-		e2f(R, r, c) = e2f(A, r, c) + e2f(B, r, c);
+		R->data.f[i] = A->data.f[i] + B->data.f[i];
 	}
 }
 
 
 void nn_mat_scl_e(mat_t* R, mat_t* M, float s)
 {
-	assert(R->_rank == M->_rank);
-	assert(M->_rank == R->_rank);
+	assert(R->_size == M->_size);
 	assert(R->dims[0] == M->dims[0] && R->dims[1] == M->dims[1]);
 
-	for (int r = M->dims[0]; r--;)
-	for (int c = M->dims[1]; c--;)
+	for (int i = M->_size; i--;)
 	{
-		e2f(R, r, c) = e2f(M, r, c) * s;
+		R->data.f[i] = M->data.f[i] * s;
 	}
 }
 
@@ -274,6 +310,7 @@ int nn_init(nn_layer_t* li, mat_t* x_in)
 	if (!x_in) return -1;
 
 	mat_t* A = x_in;
+	int i = 0;
 
 	while (!is_empty_layer(li))
 	{
@@ -290,6 +327,7 @@ int nn_init(nn_layer_t* li, mat_t* x_in)
 		if (res) return res;
 
 		A = li->A;
+		li->_i = i++;
 		li++;
 	}
 
@@ -351,11 +389,17 @@ int nn_conv_init(nn_layer_t* li, mat_t* a_in)
 
 		if (res) return res;
 
-		mat_t b = {
-			.dims = { depth_out, 1 }
-		};
-		res += nn_mat_init(&b) * -20;
-		li->b = b;
+		if (li->b.data.ptr == NULL)
+		{
+			mat_t b = {
+				.dims = { depth_out, 1 }
+			};
+
+			li->b = b;
+		}
+
+		res += nn_mat_init(&li->b) * -20;
+
 
 		if (res) return res;
 	}
@@ -478,8 +522,8 @@ void nn_conv_ff(nn_layer_t* li, mat_t* a_in)
 	}
 
 	// For each pile of channels in the pool...
-	for (int p_row = li->_CA.dims[0]; p_row--;)
-	for (int p_col = li->_CA.dims[1]; p_col--;)
+	for (int p_row = 0; p_row < li->_CA.dims[0]; p_row++)
+	for (int p_col = 0; p_col < li->_CA.dims[1]; p_col++)
 	{
 		op.corner.row = p_row * op.stride.row - pad_row;
 		op.corner.col = p_col * op.stride.col - pad_col;
@@ -487,17 +531,18 @@ void nn_conv_ff(nn_layer_t* li, mat_t* a_in)
 		// get the convolution window from the input activation volume
 		nn_conv_patch(patch, a_in, op);
 
-		// apply the filter
+		// apply the convolution
 		nn_mat_mul(&li->_z, patch, &li->w);
 		nn_mat_add_e(&li->_z, &li->_z, &li->b);
 
+		// store the output cannels in the activation map for this layer
+		// which in turn will serve as the stimuli for the next layer
 		size_t feature_depth;
 		float* z_pile = (float*)op.pixel_indexer(&li->_CA, p_row, p_col, &feature_depth);
-
 		memcpy(z_pile, li->_z.data.f, feature_depth);
 	}
 
-	// activate
+	// pass activation map though activation function, elementwise
 	li->activation(&li->_CA);
 
 	// Apply pooling if specified
@@ -619,11 +664,14 @@ static float _softmax_num_f(float v)
 }
 void nn_act_softmax(mat_t* z)
 {
-	nn_mat_f(z, z, _softmax_num_f);
 	float sum = 0;
+
+	// set all z's elements to z_i = e^z_i
+	nn_mat_f(z, z, _softmax_num_f);
+
+	// now that all z are set to e^z, simply sum over all z's elements
 	for (int i = z->_size; i--;) sum += z->data.f[i];
-	float denom = 1.f / sum ;
-	nn_mat_scl_e(z, z, denom);
+	nn_mat_scl_e(z, z, 1.f / sum);
 }
 
 
