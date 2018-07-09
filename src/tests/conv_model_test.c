@@ -56,7 +56,6 @@ int model_test(void)
 {
 	mat_t x = {
 		.dims = { 9, 9, 1 },
-		.data.f = classes[0]
 	};
 	nn_mat_init(&x);
 
@@ -70,7 +69,6 @@ int model_test(void)
 				.stride = { 1, 1 },
 				.padding = PADDING_VALID,
 			},
-			//.pool = MAX_POOL_HALF
 		},
 		{
 			.w = nn_mat_load("data/model1/c1.kernel"),
@@ -81,19 +79,13 @@ int model_test(void)
 				.stride = { 1, 1 },
 				.padding = PADDING_VALID,
 			},
-			//.pool = MAX_POOL_HALF
 		},
 		{}
 	};
 
-	assert(nn_conv_init(L + 0, &x) == 0);
-	for (int i = 1; i < 2; i++)
-	{
-		assert(nn_conv_init(L + i, (L + i - 1)->A) == 0);
-	}
+	assert(nn_init(L, &x) == 0);
 
 	for (int c = 0; c < 3; c++)
-	// for (int c = 3; c--;)
 	{
 		x.data.f = classes[c];
 		nn_conv_ff(L + 0, &x);
@@ -109,11 +101,6 @@ int model_test(void)
 		A_1.data.f[1],
 		A_1.data.f[2]);
 	}
-
-	// mat_t fcw0 = nn_mat_load("model/dense.kernel");
-	// mat_t fcb0 = nn_mat_load("model/dense.bias");
-	// mat_t fcw1 = nn_mat_load("model/dense_1.kernel");
-	// mat_t fcb1 = nn_mat_load("model/dense_1.bias");
 
 	return 0;
 }
