@@ -31,23 +31,9 @@ nn_mat_init(&M); // returns 0 on success
 
 ### _Network Declaration_
 
-A libnn neural network is composed of _nn_layer_t_ instances, which in turn contain a handful of matrices. When defining a network architecture there are only a few that you need to be concerned with. `w` the connection weights, `b` the biases, and `A`, a pointer to the vector of activations for that layer. The network should be defined as an array of _nn_layer_t_ instances, with the final layer being empty to act as a terminator. The flow of activations follows the order of the layers defined in the array. Each _nn_layer_t_ contains an function pointer called `activation` which you can customize per layer. libnn contains several builtin activation functions _nn_act_sigmoid_, _nn_act_relu_ and _nn_act_softmax_.
+A libnn neural network is composed of _nn_layer_t_ instances, which in turn contain a handful of matrices. When defining a network architecture there are only a few that you need to be concerned with. `w` the connection weights, `b` the biases, and `A`, a pointer to the vector of activations for that layer. The network should be defined as an array of _nn_layer_t_ instances, with the final layer being empty to act as a terminator. The flow of activations follows the order of the layers defined in the array. Each _nn_layer_t_ contains an function pointer called `activation` which you can customize per layer. libnn contains several builtin activation functions _nn_act_sigmoid_, _nn_act_relu_ and _nn_act_softmax_. 
 
-_nn_layer_t_ can represent either a fully connected layer, or a 2d-convolutional layer. When defining a convolutional layer, you must also set the `pool` and `filter` structs. `filter` is a _conv_op_t_ struct, and needs the following values set.
-```C
-.pool = {
-	.kernel = {
-		int w, h;
-	},
-
-	.stride = {
-		int row, col;
-	},
-
-	.padding = // PADDING_VALID or PADDING_SAME
-}
-```
-
+Here's an example of a two layer fully connected network. Note: the net in this example would be untrained, and useless. See 'Loading a Trained Model' below.
 
 ```C
 mat_t x = {
@@ -71,6 +57,39 @@ nn_layer_t L[] = {
 
 nn_init(L, &x); // returns 0 on success
 ```
+
+_nn_layer_t_ can represent either a fully connected layer, or a 2d-convolutional layer. When defining a convolutional layer, you must also set the `pool` and `filter` structs. `filter` is a _conv_op_t_ struct, and needs the following values set.
+```C
+.filter = {
+	.kernel = {
+		w, h // integers
+	},
+
+	.stride = {
+		row, col // integers
+	},
+
+	.padding = // PADDING_VALID or PADDING_SAME
+}
+```
+
+`pool` is an anonymous struct and can be defined optionally if a pooling operation is desired.
+
+```C
+.pool = {
+	.op = {
+		.kernel = {
+			w, h // integers
+		},
+
+		.stride = {
+			row, col // integers
+		},
+	},
+	.type = POOLING_MAX,
+},
+```
+
 
 ### _Loading a Trained Model_
 
@@ -148,12 +167,6 @@ def export_model(model):
                 param = model.get_variable_value(param_name)
                 shape = param.shape
 
-                # We will be converting the weight tensor into
-                # a matrix to make it usable in the predictor implementation
-                if len(shape) == 4:
-                    pass
-                    # shape = (shape[3], np.prod(shape[0:3]))
-
                 file.write(struct.pack('b', len(shape)))
                 for d in shape:
                     file.write(struct.pack('i', d))
@@ -167,6 +180,29 @@ def export_model(model):
                 else:
                     for w in param.flatten():
                         file.write(struct.pack('f', w))
+```
+If you are instead using the TensorFlow low-level Python API, serialization can be performed with this function for each evaluated parameter tensor. E.g. `m = sess.run(tensor, feed_dict={...})`
+
+```Python
+
+def serialize_matrix(m, fp):
+    """
+    Writes a numpy array into fp in the simple format that
+    libnn's nn_mat_load() function understands
+    :param m: numpy matrix
+    :param fp: file stream
+    :return: void
+    """
+    import struct
+
+    # write the header
+    fp.write(struct.pack('b', len(m.shape)))
+    for d in m.shape:
+        fp.write(struct.pack('i', d))
+
+    # followed by each element
+    for e in m.flatten():
+        fp.write(struct.pack('f', e))
 ```
 
 After the header, the remainder of the matrix consists of a number of 32 bit floats equivalent to the product of the dimensions in the header. The default matrix indexer assumes they are stored in row major order.
