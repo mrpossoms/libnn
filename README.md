@@ -19,7 +19,7 @@ Will build a static library, and copy it and the header file to `/usr/local/lib`
 
 ## Usage
 
-libnn defines two primary struct types to be aware of, `mat_t` and `nn_layer_t`. `mat_t` serves as a description and container for either and NxM matrix or a tensor. Allocating a zero filled matrix is as easy as the following.
+libnn defines two primary struct types to be aware of, _mat_t_ and _nn_layer_t_. _mat_t_ serves as a description and container for either and NxM matrix or a tensor. Allocating a zero filled matrix is as easy as the following.
 
 ```C
 mat_t M = {
@@ -31,7 +31,23 @@ nn_mat_init(&M); // returns 0 on success
 
 ### _Network Declaration_
 
-A libnn neural network is composed of `nn_layer_t` instances, which in turn contain a handful of matrices. When defining a network architecture there are only a few that you need to be concerned with. `w` the connection weights, `b` the biases, and `A`, a pointer to the vector of activations for that layer. The network should be defined as an array of `nn_layer_t` instances, with the final layer being empty to act as a terminator. The flow of activations follows the order of the layers defined in the array.
+A libnn neural network is composed of _nn_layer_t_ instances, which in turn contain a handful of matrices. When defining a network architecture there are only a few that you need to be concerned with. `w` the connection weights, `b` the biases, and `A`, a pointer to the vector of activations for that layer. The network should be defined as an array of _nn_layer_t_ instances, with the final layer being empty to act as a terminator. The flow of activations follows the order of the layers defined in the array. Each _nn_layer_t_ contains an function pointer called `activation` which you can customize per layer. libnn contains several builtin activation functions _nn_act_sigmoid_, _nn_act_relu_ and _nn_act_softmax_.
+
+_nn_layer_t_ can represent either a fully connected layer, or a 2d-convolutional layer. When defining a convolutional layer, you must also set the `pool` and `filter` structs. `filter` is a _conv_op_t_ struct, and needs the following values set.
+```C
+.pool = {
+	.kernel = {
+		int w, h;
+	},
+
+	.stride = {
+		int row, col;
+	},
+
+	.padding = // PADDING_VALID or PADDING_SAME
+}
+```
+
 
 ```C
 mat_t x = {
@@ -58,7 +74,7 @@ nn_init(L, &x); // returns 0 on success
 
 ### _Loading a Trained Model_
 
-In practice, however, you would want to load stored weights and biases from files using `nn_mat_load`.
+In practice, however, you would want to load stored weights and biases from files using `nn_mat_load`. Below is an example of instantiating a fully connected network.
 
 ```c
 nn_layer_t L[] = {
@@ -72,9 +88,45 @@ nn_layer_t L[] = {
 		.b = nn_mat_load("data/dense_1.bias"),
 		.activation = nn_act_softmax
 	},
-	{}
+	{} // NOTE: don't forget the terminator
 };
 ```
+
+And here's the equivalent for a simple CNN operating on a 9x9x1 image.
+
+```c
+mat_t x = {
+	.dims = { 9, 9, 1 },
+};
+nn_mat_init(&x);
+
+nn_layer_t L[] = {
+	{
+		.w = nn_mat_load("data/model1/c0.kernel"),
+		.b = nn_mat_load("data/model1/c0.bias"),
+		.activation = nn_act_relu,
+		.filter = {
+			.kernel = { 3, 3 },
+			.stride = { 1, 1 },
+			.padding = PADDING_VALID,
+		},
+	},
+	{
+		.w = nn_mat_load("data/model1/c1.kernel"),
+		.b = nn_mat_load("data/model1/c1.bias"),
+		.activation = nn_act_softmax,
+		.filter = {
+			.kernel = { 7, 7 },
+			.stride = { 1, 1 },
+			.padding = PADDING_VALID,
+		},
+	},
+	{} // NOTE: don't forget the terminator
+};
+
+assert(nn_init(L, &x) == 0);
+```
+
 
 Matrices loaded by `nn_mat_load` are stored in a simple binary format. With a header starting with a 1 byte integer stating the number of dimensions, and the equivalent number of 4 byte integers following it.
 
