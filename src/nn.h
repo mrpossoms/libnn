@@ -207,6 +207,19 @@ mat_t nn_mat_load(const char* path);
 int nn_init(nn_layer_t* li, mat_t* x_in);
 
 /**
+ * Duplicates an already initialized network. A cloned network will
+ * share all the same weights and biases as the source network, but
+ * will have its own activation vectors allocated. This is particularly
+ * useful if you wish to run the network concurrently on multiple threads.
+ * @param dst  - Pointer to the network that will be the clone. Must have the
+ *               same number of layers as src
+ * @param src  - Pointer to the network that is being cloned.
+ * @param x_in - Pointer to the feature vector that will be fed into the clone
+ * @return       0 on success
+ */
+int nn_clone(nn_layer_t* dst, nn_layer_t* src, mat_t* x_in);
+
+/**
  * Allocates matrices needed for the fully connected layer, and also
  * computes _size and _rank. 'w' and 'b' members of 'li' must be set
  * before calling this function.
