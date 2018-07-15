@@ -19,42 +19,61 @@
 #include "../nn.h"
 #include "../nn.c"
 
+
+void ident(mat_t* M)
+{
+	for (int r = M->dims[0]; r--;)
+	for (int c = M->dims[1]; c--;)
+	{
+		if (r == c) *e2f(M, r, c) = 1.f;
+		else *e2f(M, r, c) = 0.f;
+	}
+}
+
+
+void rand_mat(mat_t* M)
+{
+	for (int r = M->dims[0]; r--;)
+	for (int c = M->dims[1]; c--;)
+	{
+		*e2f(M, r, c) = random() % 10;
+	}
+}
+
+
 int mat_mul(void)
 {
-	float i[] = {
-		1, 0, 0,
-		0, 1, 0,
-		0, 0, 1,
-	};
+
 	mat_t I = {
 		.dims = { 3, 3 },
-		._rank = 2,
-		._size = 9,
-		.data = i,
+#ifdef USE_VECTORIZATION
+		.row_major = 1,
+#endif
 	};
 
-	float m[] = {
-		1, 2, 3,
-		4, 5, 6,
-		7, 8, 9,
-	};
 	mat_t M = {
 		.dims = { 3, 3 },
-		._rank = 2,
-		._size = 9,
-		.data = m,
 	};
 
 	mat_t R = {
-		.dims = { 3, 3 }
+		.dims = { 3, 3 },
+#ifdef USE_VECTORIZATION
+		.row_major = 1,
+#endif
 	};
+	nn_mat_init(&I);
+	nn_mat_init(&M);
 	nn_mat_init(&R);
+
+	ident(&I);
+	rand_mat(&M);
 
 	nn_mat_mul(&R, &I, &M);
 
-	for (int i = 9; i--;)
+	for (int r = M.dims[0]; r--;)
+	for (int c = M.dims[1]; c--;)
 	{
-		if (m[i] != R.data.f[i])
+		if (*e2f(&R, r, c) != *e2f(&M, r, c))
 			return -1;
 	}
 

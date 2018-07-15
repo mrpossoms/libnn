@@ -8,8 +8,13 @@
 #include <unistd.h>
 #include <string.h>
 
-#define e2f(M, i, j) ((M)->data.f[(M)->dims[1] * i + j])
-#define e2f_p(M, i, j) ((M)->data.f + ((M)->dims[1] * i + j))
+#ifdef USE_VECTORIZATION
+#define e2f(M, r, c) ((M)->row_major ? \
+	(M)->data.f + ((r) * (M)->_p_dims[1]) + (c) : \
+	(M)->data.f + ((c) * (M)->_p_dims[0]) + (r))
+#else
+#define e2f(M, r, c) ((M)->data.f + (M)->dims[1] * r + c)
+#endif
 
 static uint8_t* default_indexer(mat_t* src, int row, int col, size_t* size)
 {
@@ -47,7 +52,12 @@ int nn_mat_init(mat_t* M)
 	M->_size = 1;
 	for (M->_rank = 0; M->_rank < NN_MAT_MAX_DIMS && M->dims[M->_rank];)
 	{
+#ifdef USE_VECTORIZATION
+		M->_p_dims[M->_rank] = ceil(M->dims[M->_rank] / (float)NN_MAT_BLOCK_SIZE) * NN_MAT_BLOCK_SIZE;
+		M->_size *= M->_p_dims[M->_rank];
+#else
 		M->_size *= M->dims[M->_rank];
+#endif
 		++M->_rank;
 	}
 
@@ -57,7 +67,12 @@ int nn_mat_init(mat_t* M)
 	size_t total_elements = M->dims[0];
 	for (int i = 1; i < M->_rank; ++i)
 	{
+
+#ifdef USE_VECTORIZATION
+		total_elements *= M->_p_dims[i];
+#else
 		total_elements *= M->dims[i];
+#endif
 	}
 
 	if (M->data.ptr == NULL)
@@ -100,7 +115,7 @@ void nn_mat_mul_conv(mat_t* R, mat_t* A, mat_t* B)
 
 		for (int i = B->dims[0]; i--;)
 		{
-			dot += e2f(A, 0, i) * e2f(B, f, i);
+			dot += *e2f(A, 0, i) * *e2f(B, f, i);
 		}
 
 		R->data.f[f] = dot;
@@ -151,11 +166,31 @@ void nn_mat_mul(mat_t* R, mat_t* A, mat_t* B)
 		exit(-1);
 	}
 
+#ifdef USE_VECTORIZATION
+	int inner_blocks = A->_p_dims[1] / NN_MAT_BLOCK_SIZE;
+
+	if (!A->row_major || B->row_major) return;
+
+	for (int ri = 0; ri < A->_p_dims[0]; ++ri)
+	for (int ci = 0; ci < B->_p_dims[1]; ++ci)
+	{
+		v4f acc = {};
+		v4f* a_row = A->data.v + (ri * A->_p_dims[1] / NN_MAT_BLOCK_SIZE);
+		v4f* b_col = B->data.v + (ci * B->_p_dims[0] / NN_MAT_BLOCK_SIZE);
+
+		for (int bi = 0; bi < inner_blocks; ++bi)
+		{
+			acc += a_row[bi] * b_col[bi];
+		}
+
+		*e2f(R, ri, ci) =  acc[0] + acc[1] + acc[2] + acc[3];
+	}
+#else
 	for (int ar = A->dims[0]; ar--;)
 	for (int bc = B->dims[1]; bc--;)
 	{
 		float res = 0;
-		float* row = &e2f(A, ar, 0);
+		float* row = e2f(A, ar, 0);
 
 		for (int i = B->dims[0]; i;)
 		{
@@ -181,12 +216,13 @@ void nn_mat_mul(mat_t* R, mat_t* A, mat_t* B)
 			else
 			{
 				i -= 1;
-				res += row[i] * e2f(B, i, bc);
+				res += row[i] * *e2f(B, i, bc);
 			}
 		}
 
-		e2f(R, ar, bc) = res;
+		*e2f(R, ar, bc) = res;
 	}
+#endif
 }
 
 
@@ -208,7 +244,7 @@ void nn_mat_mul_e(mat_t* R, mat_t* A, mat_t* B)
 	for (int r = A->dims[0]; r--;)
 	for (int c = A->dims[1]; c--;)
 	{
-		e2f(R, r, c) = e2f(A, r, c) * e2f(B, r, c);
+		*e2f(R, r, c) = *e2f(A, r, c) * *e2f(B, r, c);
 	}
 }
 
@@ -230,7 +266,7 @@ void nn_mat_add_e(mat_t* R, mat_t* A, mat_t* B)
 	for (int r = A->dims[0]; r--;)
 	for (int c = A->dims[1]; c--;)
 	{
-		e2f(R, r, c) = e2f(A, r, c) + e2f(B, r, c);
+		*e2f(R, r, c) = *e2f(A, r, c) + *e2f(B, r, c);
 	}
 }
 
@@ -244,7 +280,7 @@ void nn_mat_scl_e(mat_t* R, mat_t* M, float s)
 	for (int r = M->dims[0]; r--;)
 	for (int c = M->dims[1]; c--;)
 	{
-		e2f(R, r, c) = e2f(M, r, c) * s;
+		*e2f(R, r, c) = *e2f(M, r, c) * s;
 	}
 }
 
@@ -633,8 +669,16 @@ mat_t nn_mat_load(const char* path)
 	if (nn_mat_init(&M)) goto abort;
 
 	// read the entire matrix
+#ifdef USE_VECTORIZATION
+	for (int ci = 0; ci < M._p_dims[1]; ++ci)
+	for (int ri = 0; ri < M._p_dims[0]; ++ri)
+	{
+		read(fd, e2f(&M, ri, ci), sizeof(float));
+	}
+#else
 	size_t M_size = sizeof(float) * M._size;
 	if (read(fd, M.data.ptr, M_size) != M_size) goto abort;
+#endif
 
 	close(fd);
 

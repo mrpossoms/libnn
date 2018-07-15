@@ -21,15 +21,21 @@
 #include <sys/types.h>
 #include <inttypes.h>
 
-#define NN_MAT_MAX_DIMS 4
+#define USE_VECTORIZATION
 
+#define NN_MAT_MAX_DIMS 4
+#define NN_MAT_BLOCK_SIZE 4
+
+#ifdef USE_VECTORIZATION
+typedef float v4f __attribute__ ((vector_size(NN_MAT_BLOCK_SIZE * 4)));
+#endif
 
 struct mat_t {
 	/**
 	 * @brief Int array specifying the length of each
 	 *        orthoganal dimension. Must be null terminated
 	 */
-	int dims[NN_MAT_MAX_DIMS];
+	int dims[NN_MAT_MAX_DIMS + 1];
 
 	/**
 	 * @brief Optional: Uses this function to initialize each value
@@ -55,7 +61,15 @@ struct mat_t {
 		void* ptr;
 		float* f;
 		double* d;
+#ifdef USE_VECTORIZATION
+		v4f* v;
+#endif
 	} data;
+
+#ifdef USE_VECTORIZATION
+	int row_major;
+	int _p_dims[NN_MAT_MAX_DIMS + 1];
+#endif
 };
 typedef struct mat_t mat_t;
 
