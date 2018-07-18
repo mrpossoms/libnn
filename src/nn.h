@@ -155,6 +155,17 @@ int nn_mat_init(mat_t* M);
 // will cause program termination
 
 /**
+ * @brief Selects the pointer to an element in a given row and column in a matrix.
+ *        Note: Does not check bounds.
+ * @param M   - Pointer to matrix which we will extract an element pointer from.
+ * @param row - Row index, starting at 0
+ * @param col - Col index, starting at 0
+ */
+float* nn_mat_e(mat_t* M, int row, int col);
+
+void nn_mat_transpose(mat_t* M);
+
+/**
  * @brief Performs matrix multiplication A x B storing the result in R
  * @param R - Resulting matrix of the multiplication. It's dimensions must be valid
  * @param A - Left hand of the muliplication
@@ -203,6 +214,13 @@ void nn_mat_add_e(mat_t* R, mat_t* A, mat_t* B);
  *             some transformation and returns the result.
  */
 void nn_mat_f(mat_t* R, mat_t* M, float (*func)(float));
+
+/**
+ * Loads a matrix from a file. Loading failure terminates the program.
+ * @param  path - Path to the matrix file to be loaded
+ * @return Matrix instance.
+ */
+mat_t nn_mat_load_row_order(const char* path, int row_major);
 
 /**
  * Loads a matrix from a file. Loading failure terminates the program.

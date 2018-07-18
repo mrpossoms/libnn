@@ -52,11 +52,23 @@ int nn_mat_init(mat_t* M)
 	M->_size = 1;
 	for (M->_rank = 0; M->_rank < NN_MAT_MAX_DIMS && M->dims[M->_rank];)
 	{
+		int d = M->dims[M->_rank];
 #ifdef USE_VECTORIZATION
-		M->_p_dims[M->_rank] = ceil(M->dims[M->_rank] / (float)NN_MAT_BLOCK_SIZE) * NN_MAT_BLOCK_SIZE;
+		if (d == 1)
+		{ // prevent the non-major dimension from being padded.
+		  // that would cause NN_MAT_BLOCK_SIZE * (major dim len)
+		  // extra operations which are all useless.
+			M->_p_dims[M->_rank] = d;
+		}
+		else
+		{
+			M->_p_dims[M->_rank] = ceil(d / (float)NN_MAT_BLOCK_SIZE);
+			M->_p_dims[M->_rank] *= NN_MAT_BLOCK_SIZE;
+		}
+
 		M->_size *= M->_p_dims[M->_rank];
 #else
-		M->_size *= M->dims[M->_rank];
+		M->_size *= d;
 #endif
 		++M->_rank;
 	}
@@ -64,10 +76,16 @@ int nn_mat_init(mat_t* M)
 	// size less than 2 is no good
 	assert(M->_rank >= 2);
 
-	size_t total_elements = M->dims[0];
+	size_t total_elements;
+
+#ifdef USE_VECTORIZATION
+	total_elements = M->_p_dims[0];
+#else
+	total_elements = M->dims[0];
+#endif
+
 	for (int i = 1; i < M->_rank; ++i)
 	{
-
 #ifdef USE_VECTORIZATION
 		total_elements *= M->_p_dims[i];
 #else
@@ -93,33 +111,26 @@ int nn_mat_init(mat_t* M)
 }
 
 
-void nn_mat_mul_conv(mat_t* R, mat_t* A, mat_t* B)
+float* nn_mat_e(mat_t* M, int row, int col)
 {
-	// MxN * NxO = MxO
+		return e2f(M, row, col);
+}
 
-	assert(R->_rank == A->_rank);
-	assert(A->_rank == B->_rank);
-	if(A->dims[1] != B->dims[0])
-	{
-		fprintf(stderr,
-		        "nn_mat_mul: %dx%d not compatible with %dx%d\n",
-		        A->dims[0], A->dims[1],
-		        B->dims[0], B->dims[1]);
 
-		exit(-1);
-	}
+void nn_mat_transpose(mat_t* M)
+{
+	int t;
+#ifdef USE_VECTORIZATION
+	M->row_major = !M->row_major;
+	t = M->_p_dims[0];
+	M->_p_dims[0] = M->_p_dims[1];
+	M->_p_dims[1] = t;
+#endif
 
-	for (int f = B->dims[1]; f--;)
-	{
-		float dot = 0;
+	t = M->dims[0];
+	M->dims[0] = M->dims[1];
+	M->dims[1] = t;
 
-		for (int i = B->dims[0]; i--;)
-		{
-			dot += *e2f(A, 0, i) * *e2f(B, f, i);
-		}
-
-		R->data.f[f] = dot;
-	}
 }
 
 
@@ -142,11 +153,6 @@ static inline void _BATCH4_MUL(float* res, float* row_A, int i, int col_B, mat_t
 	_A *= _B;
 
 	*res += _A[0] + _A[1] + _A[2] + _A[3];
-
-	// *res += row_A[i + 0] * b_col[B->dims[1] * (i + 0)];
-	// *res += row_A[i + 1] * b_col[B->dims[1] * (i + 1)];
-	// *res += row_A[i + 2] * b_col[B->dims[1] * (i + 2)];
-	// *res += row_A[i + 3] * b_col[B->dims[1] * (i + 3)];
 }
 
 
@@ -169,18 +175,35 @@ void nn_mat_mul(mat_t* R, mat_t* A, mat_t* B)
 #ifdef USE_VECTORIZATION
 	int inner_blocks = A->_p_dims[1] / NN_MAT_BLOCK_SIZE;
 
-	if (!A->row_major || B->row_major) return;
+	if (A->row_major == B->row_major)
+	{
+		fprintf(stderr, "%dx%d and %dx%d matrices are of the same majority\n",
+		A->dims[0], A->dims[1],
+		B->dims[0], B->dims[1]);
 
-	for (int ri = 0; ri < A->_p_dims[0]; ++ri)
-	for (int ci = 0; ci < B->_p_dims[1]; ++ci)
+		exit(-2);
+	}
+
+	for (int ri = 0; ri < A->dims[0]; ++ri)
+	for (int ci = 0; ci < B->dims[1]; ++ci)
 	{
 		v4f acc = {};
-		v4f* a_row = A->data.v + (ri * A->_p_dims[1] / NN_MAT_BLOCK_SIZE);
-		v4f* b_col = B->data.v + (ci * B->_p_dims[0] / NN_MAT_BLOCK_SIZE);
+
+		v4f *a, *b;
+
+		if (A->row_major)
+			a = A->data.v + (ri * A->_p_dims[1] / NN_MAT_BLOCK_SIZE);
+		else
+			a = A->data.v + (ci * A->_p_dims[0] / NN_MAT_BLOCK_SIZE);
+
+		if (B->row_major)
+			b = B->data.v + (ri * B->_p_dims[1] / NN_MAT_BLOCK_SIZE);
+		else
+			b = B->data.v + (ci * B->_p_dims[0] / NN_MAT_BLOCK_SIZE);
 
 		for (int bi = 0; bi < inner_blocks; ++bi)
 		{
-			acc += a_row[bi] * b_col[bi];
+			acc += a[bi] * b[bi];
 		}
 
 		*e2f(R, ri, ci) =  acc[0] + acc[1] + acc[2] + acc[3];
@@ -289,9 +312,10 @@ void nn_mat_f(mat_t* R, mat_t* M, float (*func)(float))
 {
 	assert(R->_size == M->_size);
 
-	for (int i = R->_size; i--;)
+	for (int r = M->dims[0]; r--;)
+	for (int c = M->dims[1]; c--;)
 	{
-		R->data.f[i] = func((float)M->data.f[i]);
+		*e2f(R, r, c) = func(*e2f(M, r, c));
 	}
 }
 
@@ -312,16 +336,19 @@ int nn_mat_max(mat_t* M)
 	return max_i;
 }
 
+
 static int is_conv_layer(nn_layer_t* l)
 {
 	if (!l) return -1;
 	return l->filter.kernel.w && l->filter.kernel.h;
 }
 
+
 static int is_empty_layer(nn_layer_t* l)
 {
 	return l == NULL || l->w.data.ptr == NULL;
 }
+
 
 int nn_init(nn_layer_t* li, mat_t* x_in)
 {
@@ -394,12 +421,20 @@ int nn_fc_init(nn_layer_t* li, mat_t* a_in)
 	assert(li);
 	assert(a_in);
 
-	mat_t A = {
-		.dims = { 1, li->b.dims[0] }
-	};
-	res += nn_mat_init(&A) * -10;
-	li->_CA = A;
+	if (li->_z.data.ptr == NULL)
+	{
+		mat_t z = {
+			.dims = { 1, li->w.dims[1] },
+	#ifdef USE_VECTORIZATION
+			.row_major = 1
+	#endif
+		};
 
+		res += nn_mat_init(&z) * -10;
+		li->_z = z;
+	}
+
+	li->_CA = li->_z;
 	li->A = &li->_CA;
 
 	return res;
@@ -408,18 +443,11 @@ int nn_fc_init(nn_layer_t* li, mat_t* a_in)
 
 void nn_fc_ff(nn_layer_t* li, mat_t* a_in)
 {
-	int t = li->A->dims[0];
-	li->A->dims[0] = li->A->dims[1];
-	li->A->dims[1] = t;
 
-	nn_mat_mul(li->A, a_in, &li->w);
+	nn_mat_mul(&li->_z, a_in, &li->w);
 	nn_mat_add_e(li->A, li->A, &li->b);
 
 	li->activation(li->A);
-
-	t = li->A->dims[0];
-	li->A->dims[0] = li->A->dims[1];
-	li->A->dims[1] = t;
 }
 
 
@@ -648,7 +676,17 @@ void nn_conv_max_pool(mat_t* pool, mat_t* src, conv_op_t op)
 
 mat_t nn_mat_load(const char* path)
 {
-	mat_t M = { };
+	return nn_mat_load_row_order(path, 1);
+}
+
+
+mat_t nn_mat_load_row_order(const char* path, int row_major)
+{
+	mat_t M = {
+#ifdef USE_VECTORIZATION
+		.row_major = row_major
+#endif
+	};
 	uint8_t dims = 0;
 	int fd = open(path, O_RDONLY);
 
@@ -663,6 +701,10 @@ mat_t nn_mat_load(const char* path)
 	if (dims == 1)
 	{
 		M.dims[1] = 1;
+		nn_mat_transpose(&M);
+#ifdef USE_VECTORIZATION
+		M.row_major = !M.row_major;
+#endif
 	}
 
 	// allocate space for the matrix
@@ -670,8 +712,8 @@ mat_t nn_mat_load(const char* path)
 
 	// read the entire matrix
 #ifdef USE_VECTORIZATION
-	for (int ci = 0; ci < M._p_dims[1]; ++ci)
-	for (int ri = 0; ri < M._p_dims[0]; ++ri)
+	for (int ri = 0; ri < M.dims[0]; ++ri)
+	for (int ci = 0; ci < M.dims[1]; ++ci)
 	{
 		read(fd, e2f(&M, ri, ci), sizeof(float));
 	}
