@@ -31,7 +31,7 @@ nn_mat_init(&M); // returns 0 on success
 
 ### _Network Declaration_
 
-A libnn neural network is composed of _nn_layer_t_ instances, which in turn contain a handful of matrices. When defining a network architecture there are only a few that you need to be concerned with. `w` the connection weights, `b` the biases, and `A`, a pointer to the vector of activations for that layer. The network should be defined as an array of _nn_layer_t_ instances, with the final layer being empty to act as a terminator. The flow of activations follows the order of the layers defined in the array. Each _nn_layer_t_ contains an function pointer called `activation` which you can customize per layer. libnn contains several builtin activation functions _nn_act_sigmoid_, _nn_act_relu_ and _nn_act_softmax_. 
+A libnn neural network is composed of _nn_layer_t_ instances, which in turn contain a handful of matrices. When defining a network architecture there are only a few that you need to be concerned with. `w` the connection weights, `b` the biases, and `A`, a pointer to the vector of activations output for that layer. The network should be defined as an array of _nn_layer_t_ instances, with the final layer being empty to act as a terminator. The flow of activations follows the order of the layers defined in the array. Each _nn_layer_t_ contains an function pointer called `activation` which you can customize per layer. libnn contains several builtin activation functions _nn_act_sigmoid_, _nn_act_relu_ and _nn_act_softmax_. 
 
 Here's an example of a two layer fully connected network. Note: the net in this example would be untrained, and useless. See 'Loading a Trained Model' below.
 
