@@ -63,18 +63,15 @@ for (int i = 768; i--;) *nn_mat_e(&x, 0, i) = hay[i];
 		++cycles;
 	}
 
+    int passed = y->data.f[0] < y->data.f[1] && y->data.f[2] < y->data.f[1];
+
 	Log("%d cps", 1, cycles);
-	Log("%f %f %f", 1,
+	Log("%f %f %f", passed,
 	y->data.f[0],
 	y->data.f[1],
 	y->data.f[2]);
 
-	// mat_t fcw0 = nn_mat_load("model/dense.kernel");
-	// mat_t fcb0 = nn_mat_load("model/dense.bias");
-	// mat_t fcw1 = nn_mat_load("model/dense_1.kernel");
-	// mat_t fcb1 = nn_mat_load("model/dense_1.bias");
-
-	return 0;
+	return !passed;
 }
 
 TEST_BEGIN

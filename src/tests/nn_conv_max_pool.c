@@ -19,11 +19,11 @@
 #include "../nn.h"
 #include "../nn.c"
 
-uint8_t* indexer(mat_t* src, int row, int col, size_t* size)
+float* indexer(mat_t* src, int row, int col, size_t* size)
 {
 	int cols = src->dims[1];
-	*size = sizeof(float);
-	return (void*)(src->data.f + (row * cols) + col);
+	*size = 1;
+	return (src->data.f + (row * cols) + col);
 }
 
 int conv_pool(void)

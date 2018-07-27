@@ -16,21 +16,28 @@
 #define e2f(M, r, c) ((M)->data.f + (M)->dims[1] * r + c)
 #endif
 
-static uint8_t* default_indexer(mat_t* src, int row, int col, size_t* size)
+float* nn_default_indexer(mat_t* src, int row, int col, size_t* size)
 {
 	static const float zeros[256] = {};
 
-	*size = sizeof(float) * src->dims[2];
+#ifdef USE_VECTORIZATION
+	int cols = src->_p_dims[1];
+	int depth = src->_p_dims[2] ? src->_p_dims[2] : 1;
+#else
+	int cols = src->dims[1];
+	int depth = src->dims[2] ? src->dims[2] : 1;
+#endif
+
+	*size = depth;
 
 	// Zero padding for SAME convolutions
 	if (row < 0 || col < 0 ||
 	    row >= src->dims[0] || col >= src->dims[1])
 	{
-		return (uint8_t*)zeros;
+		return (float*)zeros;
 	}
 
-	int cols = src->dims[1];
-	return (uint8_t*)(src->data.f + (row * cols) + col);
+	return (float*)(src->data.f + (row * cols) + (col * depth));
 }
 
 
@@ -162,6 +169,9 @@ void nn_mat_mul(mat_t* R, mat_t* A, mat_t* B)
 
 	assert(R->_rank == A->_rank);
 	assert(A->_rank == B->_rank);
+	assert(R->dims[0] == A->dims[0]);
+	assert(R->dims[1] == B->dims[1]);
+
 	if(A->dims[1] != B->dims[0])
 	{
 		fprintf(stderr,
@@ -470,18 +480,28 @@ int nn_conv_init(nn_layer_t* li, mat_t* a_in)
 
 		if (res) return res;
 
-		mat_t b = {
-			.dims = { depth_out, 1 }
-		};
-		res += nn_mat_init(&b) * -20;
-		li->b = b;
+		if (li->b.data.ptr)
+		{
+			mat_t b = {
+				.dims = { depth_out, 1 }
+			};
+
+			li->b = b;
+		}
+
+		res += nn_mat_init(&li->b) * -20;
+
+		nn_mat_transpose(&li->b);
 
 		if (res) return res;
 	}
 
 	{ // Setup preactivation vector
 		mat_t z = {
-			.dims = { depth_out, 1 }
+			.dims = { 1, depth_out },
+#ifdef USE_VECTORIZATION
+			.row_major = 1,
+#endif
 		};
 		res += nn_mat_init(&z) * -30;
 		li->_z = z;
@@ -491,7 +511,10 @@ int nn_conv_init(nn_layer_t* li, mat_t* a_in)
 
 	{ // Setup patch vector
 		mat_t patch = {
-			.dims = { 1, li->w.dims[0] }
+			.dims = { 1, li->w.dims[0] },
+#ifdef USE_VECTORIZATION
+			.row_major = 1,
+#endif
 		};
 		res += nn_mat_init(&patch) * -40;
 		li->_conv_patch = patch;
@@ -511,13 +534,16 @@ int nn_conv_init(nn_layer_t* li, mat_t* a_in)
 		}
 
 		// if no custom indexing function is selected use the builtin
-		if (!f.pixel_indexer) li->filter.pixel_indexer = default_indexer;
+		if (!f.pixel_indexer) li->filter.pixel_indexer = nn_default_indexer;
 
 		int ca_rows = ((a_rows - f.kernel.h + 2 * pad_row) / f.stride.row) + 1;
 		int ca_cols = ((a_cols - f.kernel.w + 2 * pad_col) / f.stride.col) + 1;
 
 		mat_t CA = {
-			.dims = { ca_rows, ca_cols, depth_out }
+			.dims = { ca_rows, ca_cols, depth_out },
+#ifdef USE_VECTORIZATION
+			.row_major = 1,
+#endif
 		};
 		res += nn_mat_init(&CA) * -50;
 		li->_CA = CA;
@@ -544,7 +570,7 @@ int nn_conv_init(nn_layer_t* li, mat_t* a_in)
 			// if no custom indexing function is selected use the builtin
 			if (!li->pool.op.pixel_indexer)
 			{
-				li->pool.op.pixel_indexer = default_indexer;
+				li->pool.op.pixel_indexer = nn_default_indexer;
 			}
 
 			li->A = &li->pool._PA;
@@ -568,14 +594,18 @@ void nn_conv_patch(mat_t* patch, mat_t* src, conv_op_t op)
 		int ri = op.corner.row + row;
 		int ci = op.corner.col + col;
 		int i = row * op.kernel.w + col;
-		size_t pix_size;
-		uint8_t* pixel_chan = op.pixel_indexer(src,
-		                                       ri,
-		                                       ci,
-		                                       &pix_size);
+		size_t depth;
+		float* pixel_chan = op.pixel_indexer(src, ri, ci, &depth);
 
-		uint8_t* patch_bytes = (uint8_t*)patch->data.ptr;
-		memcpy(patch_bytes + (pix_size * i), pixel_chan, pix_size);
+		for (int d = depth; d--;)
+		{
+			// TODO: cleanup
+			int i = col * depth;
+			int j = row * op.kernel.w;
+			float* pile = nn_mat_e(patch, 0, j + i);
+			pile[d] = pixel_chan[d];
+			// printf("[%d + %d] = %f\n", i, j, pile[d]);
+		}
 	}
 }
 
@@ -610,10 +640,15 @@ void nn_conv_ff(nn_layer_t* li, mat_t* a_in)
 		nn_mat_mul(&li->_z, patch, &li->w);
 		nn_mat_add_e(&li->_z, &li->_z, &li->b);
 
-		size_t feature_depth;
-		float* z_pile = (float*)op.pixel_indexer(&li->_CA, p_row, p_col, &feature_depth);
+		size_t depth;
+		float* z_pile = op.pixel_indexer(&li->_z, 0, 0, &depth);
+		float* ca_pile = op.pixel_indexer(&li->_CA, p_row, p_col, &depth);
 
-		memcpy(z_pile, li->_z.data.f, feature_depth);
+		for (int d = depth; d--;)
+		{
+			ca_pile[d] = z_pile[d];
+			// ca_pile[d] = *nn_mat_e(&li->_z, p_row, d);
+		}
 	}
 
 	// activate
@@ -649,8 +684,7 @@ void nn_conv_max_pool(mat_t* pool, mat_t* src, conv_op_t op)
 	{
 		// get the pile address
 		size_t size;
-		float* pool_pile = (float*)op.pixel_indexer(
-			pool, p_row, p_col, &size);
+		float* pool_pile = op.pixel_indexer(pool, p_row, p_col, &size);
 
 		// For each kernel window position
 		for (int k_row = op.kernel.w; k_row--;)
@@ -659,8 +693,7 @@ void nn_conv_max_pool(mat_t* pool, mat_t* src, conv_op_t op)
 			int s_row = p_row * op.stride.row + k_row;
 			int s_col = p_col * op.stride.col + k_col;
 
-			float* src_pile = (float*)op.pixel_indexer(
-				src, s_row, s_col, &size);
+			float* src_pile = op.pixel_indexer(src, s_row, s_col, &size);
 
 			for (int chan = pool->dims[2]; chan--;)
 			{

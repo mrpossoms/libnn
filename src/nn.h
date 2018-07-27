@@ -108,7 +108,7 @@ typedef struct {
 	 * @param size Will contain the size of the pixel and its channels in bytes
 	 * @return Pointer to contigious memory containing pixel
 	 */
-	uint8_t* (*pixel_indexer)(mat_t* src, int row, int col, size_t* size);
+	float* (*pixel_indexer)(mat_t* src, int row, int col, size_t* size);
 
 	struct {
 		int row, col;
@@ -164,6 +164,8 @@ int nn_mat_init(mat_t* M);
 float* nn_mat_e(mat_t* M, int row, int col);
 
 void nn_mat_transpose(mat_t* M);
+
+float* nn_default_indexer(mat_t* src, int row, int col, size_t* size);
 
 /**
  * @brief Performs matrix multiplication A x B storing the result in R

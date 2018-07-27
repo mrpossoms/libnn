@@ -52,17 +52,40 @@ float classes[3][9 * 9] =  {
 	}                            \
 }\
 
+void mat_copy(mat_t* dst, float* src)
+{
+	for (int i = dst->dims[0]; i--;)
+	for (int j = dst->dims[1]; j--;)
+	{
+		*nn_mat_e(dst, i, j) = src[i * dst->dims[1] + j];
+	}
+}
+
+int max_idx(float* a, int len)
+{
+	int i = 0;
+	for (;len--;)
+	{
+		if (a[len] > a[i]) i = len;
+	}
+
+	return i;
+}
+
 int model_test(void)
 {
 	mat_t x = {
 		.dims = { 9, 9, 1 },
+#ifdef USE_VECTORIZATION
+		.row_major = 1,
+#endif
 	};
 	nn_mat_init(&x);
 
 	nn_layer_t L[] = {
 		{
-			.w = nn_mat_load("data/model1/c0.kernel"),
-			.b = nn_mat_load("data/model1/c0.bias"),
+			.w = nn_mat_load_row_order("data/model1/c0.kernel", 0),
+			.b = nn_mat_load_row_order("data/model1/c0.bias", 1),
 			.activation = nn_act_relu,
 			.filter = {
 				.kernel = { 3, 3 },
@@ -71,8 +94,8 @@ int model_test(void)
 			},
 		},
 		{
-			.w = nn_mat_load("data/model1/c1.kernel"),
-			.b = nn_mat_load("data/model1/c1.bias"),
+			.w = nn_mat_load_row_order("data/model1/c1.kernel", 0),
+			.b = nn_mat_load_row_order("data/model1/c1.bias", 1),
 			.activation = nn_act_softmax,
 			.filter = {
 				.kernel = { 7, 7 },
@@ -85,24 +108,23 @@ int model_test(void)
 
 	assert(nn_init(L, &x) == 0);
 
+	int all_passed = 1;
 	for (int c = 0; c < 3; c++)
 	{
-		x.data.f = classes[c];
-		nn_conv_ff(L + 0, &x);
-		for (int i = 1; i < 2; ++i)
-		{
-			nn_conv_ff(L + i, L[i - 1].A);
-		}
+		mat_copy(&x, classes[c]);
+		mat_t* A_1 = nn_predict(L, &x);
 
-		mat_t A_1 = *L[1].A;
+		int passed = max_idx(A_1->data.f, 3) == c;
 
-		Log("%f %f %f", 1,
-		A_1.data.f[0],
-		A_1.data.f[1],
-		A_1.data.f[2]);
+		all_passed &= passed;
+
+		Log("%f %f %f", passed,
+		A_1->data.f[0],
+		A_1->data.f[1],
+		A_1->data.f[2]);
 	}
 
-	return 0;
+	return !all_passed;
 }
 
 TEST_BEGIN

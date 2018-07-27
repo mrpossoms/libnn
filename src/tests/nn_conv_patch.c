@@ -19,12 +19,6 @@
 #include "../nn.h"
 #include "../nn.c"
 
-uint8_t* indexer(mat_t* src, int row, int col, size_t* size)
-{
-	int cols = src->dims[1];
-	*size = sizeof(float);
-	return (void*)e2f(src, row, col);
-}
 
 int conv_patch(void)
 {
@@ -35,20 +29,20 @@ int conv_patch(void)
 		3, 3, 4, 4,
 	};
 	mat_t src = {
-		.dims = { 4, 4 },
+		.dims = { 4, 4, 1 },
 	};
 	nn_mat_init(&src);
 	src.data.ptr = (void*)src_buf;
 
 	mat_t patch = {
-		.dims = { 2, 2 }
+		.dims = { 1, 4 }
 	};
 	nn_mat_init(&patch);
 
 	conv_op_t op = {
 		.kernel = { 2, 2 },
 		.corner = { 0, 0 },
-		.pixel_indexer = indexer
+		.pixel_indexer = nn_default_indexer,
 	};
 
 	int corners[][2] = {
@@ -60,14 +54,18 @@ int conv_patch(void)
 
 	for (int num = 1; num <= 4; ++num)
 	{
+		float exp = num;
 		op.corner.row = corners[num-1][0];
 		op.corner.col = corners[num-1][1];
 		nn_conv_patch(&patch, &src, op);
 
-		for (int i = patch._size; i--;)
+		for (int i = patch.dims[0]; i--;)
+		for (int j = patch.dims[1]; j--;)
 		{
-			if (patch.data.f[i] != num)
+			float e = *nn_mat_e(&patch, i, j);
+			if (e != exp)
 			{
+				Log("patch[%d,%d] == %f, expected %f", 0, i, j, e, exp);
 				return -num;
 			}
 		}
