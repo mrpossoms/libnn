@@ -39,6 +39,7 @@ int conv_patch(void)
 	};
 	mat_t X0 = {
 		.dims = { 3, 3, 1 },
+		.is_activation_map = 1,
 #ifdef USE_VECTORIZATION
 		.row_major = 1,
 #endif
@@ -53,6 +54,7 @@ int conv_patch(void)
 	};
 	mat_t X1 = {
 		.dims = { 3, 3, 1 },
+		.is_activation_map = 1,
 #ifdef USE_VECTORIZATION
 		.row_major = 1,
 #endif
@@ -70,7 +72,7 @@ int conv_patch(void)
 	};
 	nn_layer_t conv = {
 		.w = {
-			.dims = { 3, 3, 1, 1 },
+			.dims = { 9, 1 },
 		},
 		.b = {
 			.dims = { 1, 1 },
@@ -80,24 +82,19 @@ int conv_patch(void)
 			.stride = { 1, 1 },
 			.pixel_indexer = nn_default_indexer
 		},
-		.activation = nn_act_sigmoid
+		.activation = nn_act_relu
 	};
 	assert(nn_conv_init(&conv, &X0) == 0);
 	mat_copy(&conv.w, w_s);
 
-	// conv_op_t op = {
-	// 	.kernel = { 3, 3 },
-	// 	.stride = { 1, 1 },
-	// 	.pixel_indexer = indexer
-// };/
 
 	nn_conv_ff(&conv, &X0);
 	Log("A[0] -> %f\n", 1, conv.A->data.f[0]);
-	assert(conv.A->data.f[0] > 0.5);
+	assert(conv.A->data.f[0] == 3);
 
 	nn_conv_ff(&conv, &X1);
 	Log("A[0] -> %f\n", 1, conv.A->data.f[0]);
-	assert(conv.A->data.f[0] <= 0.5);
+	assert(conv.A->data.f[0] == 0);
 
 	return 0;
 }

@@ -20,13 +20,8 @@ float* nn_default_indexer(mat_t* src, int row, int col, size_t* size)
 {
 	static const float zeros[256] = {};
 
-#ifdef USE_VECTORIZATION
-	int cols = src->_p_dims[1];
-	int depth = src->_p_dims[2] ? src->_p_dims[2] : 1;
-#else
 	int cols = src->dims[1];
 	int depth = src->dims[2] ? src->dims[2] : 1;
-#endif
 
 	*size = depth;
 
@@ -37,14 +32,17 @@ float* nn_default_indexer(mat_t* src, int row, int col, size_t* size)
 		return (float*)zeros;
 	}
 
-	return (float*)(src->data.f + (row * cols) + (col * depth));
+
+	return src->data.f + (row * (cols * depth)) + (col * depth);
 }
+//------------------------------------------------------------------------------
 
 
 static float zero_fill(mat_t* M)
 {
 	return 0;
 }
+//------------------------------------------------------------------------------
 
 
 int nn_mat_init(mat_t* M)
@@ -61,7 +59,7 @@ int nn_mat_init(mat_t* M)
 	{
 		int d = M->dims[M->_rank];
 #ifdef USE_VECTORIZATION
-		if (d == 1)
+		if (d == 1 || M->is_activation_map)
 		{ // prevent the non-major dimension from being padded.
 		  // that would cause NN_MAT_BLOCK_SIZE * (major dim len)
 		  // extra operations which are all useless.
@@ -116,12 +114,14 @@ int nn_mat_init(mat_t* M)
 
 	return 0;
 }
+//------------------------------------------------------------------------------
 
 
 float* nn_mat_e(mat_t* M, int row, int col)
 {
 		return e2f(M, row, col);
 }
+//------------------------------------------------------------------------------
 
 
 void nn_mat_transpose(mat_t* M)
@@ -139,6 +139,7 @@ void nn_mat_transpose(mat_t* M)
 	M->dims[1] = t;
 
 }
+//------------------------------------------------------------------------------
 
 
 static inline void _BATCH4_MUL(float* res, float* row_A, int i, int col_B, mat_t* B)
@@ -161,6 +162,7 @@ static inline void _BATCH4_MUL(float* res, float* row_A, int i, int col_B, mat_t
 
 	*res += _A[0] + _A[1] + _A[2] + _A[3];
 }
+//------------------------------------------------------------------------------
 
 
 void nn_mat_mul(mat_t* R, mat_t* A, mat_t* B)
@@ -257,6 +259,7 @@ void nn_mat_mul(mat_t* R, mat_t* A, mat_t* B)
 	}
 #endif
 }
+//------------------------------------------------------------------------------
 
 
 void nn_mat_mul_e(mat_t* R, mat_t* A, mat_t* B)
@@ -280,6 +283,7 @@ void nn_mat_mul_e(mat_t* R, mat_t* A, mat_t* B)
 		*e2f(R, r, c) = *e2f(A, r, c) * *e2f(B, r, c);
 	}
 }
+//------------------------------------------------------------------------------
 
 
 void nn_mat_add_e(mat_t* R, mat_t* A, mat_t* B)
@@ -302,6 +306,7 @@ void nn_mat_add_e(mat_t* R, mat_t* A, mat_t* B)
 		*e2f(R, r, c) = *e2f(A, r, c) + *e2f(B, r, c);
 	}
 }
+//------------------------------------------------------------------------------
 
 
 void nn_mat_scl_e(mat_t* R, mat_t* M, float s)
@@ -316,6 +321,7 @@ void nn_mat_scl_e(mat_t* R, mat_t* M, float s)
 		*e2f(R, r, c) = *e2f(M, r, c) * s;
 	}
 }
+//------------------------------------------------------------------------------
 
 
 void nn_mat_f(mat_t* R, mat_t* M, float (*func)(float))
@@ -328,6 +334,7 @@ void nn_mat_f(mat_t* R, mat_t* M, float (*func)(float))
 		*e2f(R, r, c) = func(*e2f(M, r, c));
 	}
 }
+//------------------------------------------------------------------------------
 
 
 int nn_mat_max(mat_t* M)
@@ -345,6 +352,7 @@ int nn_mat_max(mat_t* M)
 
 	return max_i;
 }
+//------------------------------------------------------------------------------
 
 
 static int is_conv_layer(nn_layer_t* l)
@@ -352,12 +360,14 @@ static int is_conv_layer(nn_layer_t* l)
 	if (!l) return -1;
 	return l->filter.kernel.w && l->filter.kernel.h;
 }
+//------------------------------------------------------------------------------
 
 
 static int is_empty_layer(nn_layer_t* l)
 {
 	return l == NULL || l->w.data.ptr == NULL;
 }
+//------------------------------------------------------------------------------
 
 
 int nn_init(nn_layer_t* li, mat_t* x_in)
@@ -386,6 +396,7 @@ int nn_init(nn_layer_t* li, mat_t* x_in)
 
 	return 0;
 }
+//------------------------------------------------------------------------------
 
 
 int nn_clone(nn_layer_t* dst, nn_layer_t* src, mat_t* x_in)
@@ -423,6 +434,7 @@ int nn_clone(nn_layer_t* dst, nn_layer_t* src, mat_t* x_in)
 
 	return 0;
 }
+//------------------------------------------------------------------------------
 
 
 int nn_fc_init(nn_layer_t* li, mat_t* a_in)
@@ -449,6 +461,7 @@ int nn_fc_init(nn_layer_t* li, mat_t* a_in)
 
 	return res;
 }
+//------------------------------------------------------------------------------
 
 
 void nn_fc_ff(nn_layer_t* li, mat_t* a_in)
@@ -459,6 +472,7 @@ void nn_fc_ff(nn_layer_t* li, mat_t* a_in)
 
 	li->activation(li->A);
 }
+//------------------------------------------------------------------------------
 
 
 int nn_conv_init(nn_layer_t* li, mat_t* a_in)
@@ -469,29 +483,16 @@ int nn_conv_init(nn_layer_t* li, mat_t* a_in)
 
 	int a_rows = a_in->dims[0];
 	int a_cols = a_in->dims[1];
-	int depth_in = li->w.dims[2];
-	int depth_out = li->w.dims[3];
+	// int depth_in = li->w.dims[2];
+	int depth_out = li->w.dims[1];
 
 	{ // Setup matrices for weights and biases
-		li->w.dims[0] = li->w.dims[0] * li->w.dims[1] * depth_in;
-		li->w.dims[1] = depth_out;
-		li->w.dims[2] = li->w.dims[3] = 0;
+		// li->w.dims[0] = li->w.dims[0] * li->w.dims[1] * depth_in;
+		// li->w.dims[1] = depth_out;
+		// li->w.dims[2] = li->w.dims[3] = 0;
 		res += nn_mat_init(&li->w) * -10;
 
-		if (res) return res;
-
-		if (li->b.data.ptr)
-		{
-			mat_t b = {
-				.dims = { depth_out, 1 }
-			};
-
-			li->b = b;
-		}
-
 		res += nn_mat_init(&li->b) * -20;
-
-		nn_mat_transpose(&li->b);
 
 		if (res) return res;
 	}
@@ -543,6 +544,7 @@ int nn_conv_init(nn_layer_t* li, mat_t* a_in)
 			.dims = { ca_rows, ca_cols, depth_out },
 #ifdef USE_VECTORIZATION
 			.row_major = 1,
+			.is_activation_map = 1,
 #endif
 		};
 		res += nn_mat_init(&CA) * -50;
@@ -581,6 +583,7 @@ int nn_conv_init(nn_layer_t* li, mat_t* a_in)
 
 	return res;
 }
+//------------------------------------------------------------------------------
 
 
 void nn_conv_patch(mat_t* patch, mat_t* src, conv_op_t op)
@@ -601,13 +604,14 @@ void nn_conv_patch(mat_t* patch, mat_t* src, conv_op_t op)
 		{
 			// TODO: cleanup
 			int i = col * depth;
-			int j = row * op.kernel.w;
+			int j = row * op.kernel.w * depth;
 			float* pile = nn_mat_e(patch, 0, j + i);
 			pile[d] = pixel_chan[d];
 			// printf("[%d + %d] = %f\n", i, j, pile[d]);
 		}
 	}
 }
+//------------------------------------------------------------------------------
 
 
 void nn_conv_ff(nn_layer_t* li, mat_t* a_in)
@@ -627,8 +631,11 @@ void nn_conv_ff(nn_layer_t* li, mat_t* a_in)
 	}
 
 	// For each pile of channels in the pool...
-	for (int p_row = li->_CA.dims[0]; p_row--;)
-	for (int p_col = li->_CA.dims[1]; p_col--;)
+	// for (int p_row = li->_CA.dims[0]; p_row--;)
+	// for (int p_col = li->_CA.dims[1]; p_col--;)
+	// TODO
+	for (int p_row = 0; p_row < li->_CA.dims[0]; ++p_row)
+	for (int p_col = 0; p_col < li->_CA.dims[1]; ++p_col)
 	{
 		op.corner.row = p_row * op.stride.row - pad_row;
 		op.corner.col = p_col * op.stride.col - pad_col;
@@ -639,6 +646,9 @@ void nn_conv_ff(nn_layer_t* li, mat_t* a_in)
 		// apply the filter
 		nn_mat_mul(&li->_z, patch, &li->w);
 		nn_mat_add_e(&li->_z, &li->_z, &li->b);
+
+		// activate
+		li->activation(&li->_z);
 
 		size_t depth;
 		float* z_pile = op.pixel_indexer(&li->_z, 0, 0, &depth);
@@ -651,8 +661,6 @@ void nn_conv_ff(nn_layer_t* li, mat_t* a_in)
 		}
 	}
 
-	// activate
-	li->activation(&li->_CA);
 
 	// Apply pooling if specified
 	switch (li->pool.type)
@@ -664,6 +672,7 @@ void nn_conv_ff(nn_layer_t* li, mat_t* a_in)
 		case POOLING_NONE:;
 	}
 }
+//------------------------------------------------------------------------------
 
 
 void nn_conv_max_pool(mat_t* pool, mat_t* src, conv_op_t op)
@@ -705,12 +714,14 @@ void nn_conv_max_pool(mat_t* pool, mat_t* src, conv_op_t op)
 		}
 	}
 }
+//------------------------------------------------------------------------------
 
 
 mat_t nn_mat_load(const char* path)
 {
 	return nn_mat_load_row_order(path, 1);
 }
+//------------------------------------------------------------------------------
 
 
 mat_t nn_mat_load_row_order(const char* path, int row_major)
@@ -722,6 +733,8 @@ mat_t nn_mat_load_row_order(const char* path, int row_major)
 	};
 	uint8_t dims = 0;
 	int fd = open(path, O_RDONLY);
+
+	// NOTE: bias indexing is effed up
 
 	// open file, read the dimensions
 	if (fd < 0) goto abort;
@@ -740,20 +753,27 @@ mat_t nn_mat_load_row_order(const char* path, int row_major)
 #endif
 	}
 
+	// TODO: clean up, loading is not the right place
+	// to reformat the parameters dimensions
+	else if (dims >= 4)
+	{
+		int out_depth = M.dims[3];
+		int in_size = M.dims[0] * M.dims[1] * M.dims[2];
+		M.dims[0] = in_size;
+		M.dims[1] = out_depth;
+		M.dims[2] = M.dims[3] = 0;
+		M._rank = 2;
+	}
+
 	// allocate space for the matrix
 	if (nn_mat_init(&M)) goto abort;
 
 	// read the entire matrix
-#ifdef USE_VECTORIZATION
 	for (int ri = 0; ri < M.dims[0]; ++ri)
 	for (int ci = 0; ci < M.dims[1]; ++ci)
 	{
 		read(fd, e2f(&M, ri, ci), sizeof(float));
 	}
-#else
-	size_t M_size = sizeof(float) * M._size;
-	if (read(fd, M.data.ptr, M_size) != M_size) goto abort;
-#endif
 
 	close(fd);
 
@@ -765,32 +785,44 @@ abort:
 	exit(-13);
 	return M;
 }
+//------------------------------------------------------------------------------
 
 
 static float _sigmoid_e(float v)
 {
 	return 1 / (1 + powf(M_E, -v));
 }
+//------------------------------------------------------------------------------
+
+
 void nn_act_sigmoid(mat_t* z)
 {
 	nn_mat_f(z, z, _sigmoid_e);
 }
+//------------------------------------------------------------------------------
 
 
 static float _relu_e(float v)
 {
 	return v > 0 ? v : 0;
 }
+//------------------------------------------------------------------------------
+
+
 void nn_act_relu(mat_t* z)
 {
 	nn_mat_f(z, z, _relu_e);
 }
+//------------------------------------------------------------------------------
 
 
 static float _softmax_num_f(float v)
 {
 	return powf(M_E, v);
 }
+//------------------------------------------------------------------------------
+
+
 void nn_act_softmax(mat_t* z)
 {
 	nn_mat_f(z, z, _softmax_num_f);
@@ -799,6 +831,7 @@ void nn_act_softmax(mat_t* z)
 	float denom = 1.f / sum ;
 	nn_mat_scl_e(z, z, denom);
 }
+//------------------------------------------------------------------------------
 
 
 mat_t* nn_predict(nn_layer_t* l, mat_t* x)

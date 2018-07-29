@@ -33,13 +33,13 @@ int model_test(void)
 
 	nn_layer_t L[] = {
 		{
-			.w = nn_mat_load_row_order("data/model0/dense.kernel", 0),
-			.b = nn_mat_load_row_order("data/model0/dense.bias", 1),
+			.w = nn_mat_load_row_order("data/model_fc0/dense.kernel", 0),
+			.b = nn_mat_load_row_order("data/model_fc0/dense.bias", 1),
 			.activation = nn_act_relu
 		},
 		{
-			.w = nn_mat_load_row_order("data/model0/dense_1.kernel", 0),
-			.b = nn_mat_load_row_order("data/model0/dense_1.bias", 1),
+			.w = nn_mat_load_row_order("data/model_fc0/dense_1.kernel", 0),
+			.b = nn_mat_load_row_order("data/model_fc0/dense_1.bias", 1),
 			.activation = nn_act_softmax
 		},
 		{}

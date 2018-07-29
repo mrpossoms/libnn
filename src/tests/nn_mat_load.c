@@ -21,7 +21,7 @@
 
 int mat_load(void)
 {
-	mat_t M = nn_mat_load("data/model0/dense.kernel");
+	mat_t M = nn_mat_load("data/model_fc0/dense.kernel");
 
 	assert(M.data.ptr);
 	assert(M.dims[0] == 768);

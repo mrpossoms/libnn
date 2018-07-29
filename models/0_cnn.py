@@ -108,31 +108,26 @@ Y = tf.placeholder(tf.float32, shape=[None, 1, 1, 3])
 # file the kernel (weight) and bias tensors away in a dictionary
 # for easy access when saving
 P = {
-    'c0_kernel': tf.Variable(tf.truncated_normal([3, 3, 3, 3])) * 0.01,
+    'c0_kernel': tf.Variable(tf.truncated_normal([9, 9, 1, 3])) * 0.01,
     'c0_bias'  : tf.Variable(tf.constant(0.1, shape=[3])),
-    'c1_kernel': tf.Variable(tf.truncated_normal([7, 7, 3, 3])) * 0.01,
-    'c1_bias'  : tf.Variable(tf.constant(0.1, shape=[3]))
 }
 
 # Compute convolution, pre-activations and activations for convolutional layer 0
 c0_z = tf.nn.conv2d(X, P['c0_kernel'], [1, 1, 1, 1], 'VALID') + P['c0_bias']
-c0_a = tf.nn.relu(c0_z)
 
-# Compute convolution, pre-activations and activations for convolutional layer 1
-c1_z = tf.nn.conv2d(c0_a, P['c1_kernel'], [1, 1, 1, 1], 'VALID') + P['c1_bias']
-p = tf.nn.softmax(c1_z)
+p = tf.nn.softmax(c0_z)
 
 # Define loss, using cross entropy and l2 loss for regularization
 cross_entropy = tf.nn.softmax_cross_entropy_with_logits_v2(labels=Y, logits=p)
-loss = tf.reduce_mean(cross_entropy) + tf.nn.l2_loss(P['c0_kernel']) + tf.nn.l2_loss(P['c0_kernel'])
+loss = tf.reduce_mean(cross_entropy) + tf.nn.l2_loss(P['c0_kernel'])
 
-optimize = tf.train.AdamOptimizer(learning_rate=0.1).minimize(loss)
+optimize = tf.train.AdamOptimizer(learning_rate=0.01).minimize(loss)
 
 sess = tf.Session()
 sess.run(tf.global_variables_initializer())
 
 # run gradient descent to fit parameters
-for e in range(1000):
+for e in range(10000):
     sess.run(optimize, feed_dict={X: ts_X, Y: ts_Y})
 
     if e % 100 == 0:
@@ -188,4 +183,4 @@ for c in range(3):
     print(sess.run(c0_z, feed_dict={X: [class0,class1,class2][c]}))
 
     print(str(c) + " 1_z vvv")
-    print(sess.run(c1_z, feed_dict={X: [class0,class1,class2][c]}))
+    #print(sess.run(c1_z, feed_dict={X: [class0,class1,class2][c]}))

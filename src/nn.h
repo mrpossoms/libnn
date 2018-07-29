@@ -31,6 +31,8 @@ typedef float v4f __attribute__ ((vector_size(NN_MAT_BLOCK_SIZE * 4)));
 #endif
 
 struct mat_t {
+	const char* from_file;
+
 	/**
 	 * @brief Int array specifying the length of each
 	 *        orthoganal dimension. Must be null terminated
@@ -60,7 +62,6 @@ struct mat_t {
 	union {
 		void* ptr;
 		float* f;
-		double* d;
 #ifdef USE_VECTORIZATION
 		v4f* v;
 #endif
@@ -68,6 +69,15 @@ struct mat_t {
 
 #ifdef USE_VECTORIZATION
 	int row_major;
+
+	/**
+	 * @brief prevents padding of dimensions
+	 */
+	int is_activation_map;
+
+	/**
+	 * @brief padded dimensions, used to correct alignment for vector operations
+	 */
 	int _p_dims[NN_MAT_MAX_DIMS + 1];
 #endif
 };
