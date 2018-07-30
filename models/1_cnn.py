@@ -15,6 +15,7 @@
 
 import tensorflow as tf
 import numpy as np
+from helpers import serialize_matrix
 
 tf.set_random_seed(0) # make libnn debugging easier
 
@@ -74,26 +75,6 @@ def ts(n=100):
     return np.array(X), np.array(Y)
 
 
-def serialize_matrix(m, fp):
-    """
-    Writes a numpy array into fp in the simple format that
-    libnn's nn_mat_load() function understands
-    :param m: numpy matrix
-    :param fp: file stream
-    :return: void
-    """
-    import struct
-
-    # write the header
-    fp.write(struct.pack('b', len(m.shape)))
-    for d in m.shape:
-        fp.write(struct.pack('i', d))
-
-    # followed by each element
-    for e in m.flatten():
-        fp.write(struct.pack('f', e))
-
-
 #    ___      _
 #   / __| ___| |_ _  _ _ __
 #   \__ \/ -_)  _| || | '_ \
@@ -120,19 +101,21 @@ c0_a = tf.nn.relu(c0_z)
 
 # Compute convolution, pre-activations and activations for convolutional layer 1
 c1_z = tf.nn.conv2d(c0_a, P['c1_kernel'], [1, 1, 1, 1], 'VALID') + P['c1_bias']
+
 p = tf.nn.softmax(c1_z)
 
 # Define loss, using cross entropy and l2 loss for regularization
 cross_entropy = tf.nn.softmax_cross_entropy_with_logits_v2(labels=Y, logits=p)
-loss = tf.reduce_mean(cross_entropy) + tf.nn.l2_loss(P['c0_kernel']) + tf.nn.l2_loss(P['c0_kernel'])
+loss = tf.reduce_mean(cross_entropy)
+# + tf.nn.l2_loss(P['c0_kernel']) + tf.nn.l2_loss(P['c1_kernel'])
 
-optimize = tf.train.AdamOptimizer(learning_rate=0.1).minimize(loss)
+optimize = tf.train.AdamOptimizer(learning_rate=0.01).minimize(loss)
 
 sess = tf.Session()
 sess.run(tf.global_variables_initializer())
 
 # run gradient descent to fit parameters
-for e in range(1000):
+for e in range(10000):
     sess.run(optimize, feed_dict={X: ts_X, Y: ts_Y})
 
     if e % 100 == 0:

@@ -21,15 +21,21 @@
 #include <sys/types.h>
 #include <inttypes.h>
 
-#define NN_MAT_MAX_DIMS 4
+#define USE_VECTORIZATION
 
+#define NN_MAT_MAX_DIMS 4
+#define NN_MAT_BLOCK_SIZE 16
+
+#ifdef USE_VECTORIZATION
+typedef float v4f __attribute__ ((vector_size(NN_MAT_BLOCK_SIZE * 4)));
+#endif
 
 struct mat_t {
 	/**
 	 * @brief Int array specifying the length of each
 	 *        orthoganal dimension. Must be null terminated
 	 */
-	int dims[NN_MAT_MAX_DIMS];
+	int dims[NN_MAT_MAX_DIMS + 1];
 
 	/**
 	 * @brief Optional: Uses this function to initialize each value
@@ -54,8 +60,24 @@ struct mat_t {
 	union {
 		void* ptr;
 		float* f;
-		double* d;
+#ifdef USE_VECTORIZATION
+		v4f* v;
+#endif
 	} data;
+
+#ifdef USE_VECTORIZATION
+	int row_major;
+
+	/**
+	 * @brief prevents padding of dimensions
+	 */
+	int is_activation_map;
+
+	/**
+	 * @brief padded dimensions, used to correct alignment for vector operations
+	 */
+	int _p_dims[NN_MAT_MAX_DIMS + 1];
+#endif
 };
 typedef struct mat_t mat_t;
 
@@ -94,7 +116,7 @@ typedef struct {
 	 * @param size Will contain the size of the pixel and its channels in bytes
 	 * @return Pointer to contigious memory containing pixel
 	 */
-	uint8_t* (*pixel_indexer)(mat_t* src, int row, int col, size_t* size);
+	float* (*pixel_indexer)(mat_t* src, int row, int col, size_t* size);
 
 	struct {
 		int row, col;
@@ -139,6 +161,19 @@ int nn_mat_init(mat_t* M);
 // ------------------------------------
 // All of these functions implicitly succeed, errors or inconsistencies
 // will cause program termination
+
+/**
+ * @brief Selects the pointer to an element in a given row and column in a matrix.
+ *        Note: Does not check bounds.
+ * @param M   - Pointer to matrix which we will extract an element pointer from.
+ * @param row - Row index, starting at 0
+ * @param col - Col index, starting at 0
+ */
+float* nn_mat_e(mat_t* M, int row, int col);
+
+void nn_mat_transpose(mat_t* M);
+
+float* nn_default_indexer(mat_t* src, int row, int col, size_t* size);
 
 /**
  * @brief Performs matrix multiplication A x B storing the result in R
@@ -189,6 +224,13 @@ void nn_mat_add_e(mat_t* R, mat_t* A, mat_t* B);
  *             some transformation and returns the result.
  */
 void nn_mat_f(mat_t* R, mat_t* M, float (*func)(float));
+
+/**
+ * Loads a matrix from a file. Loading failure terminates the program.
+ * @param  path - Path to the matrix file to be loaded
+ * @return Matrix instance.
+ */
+mat_t nn_mat_load_row_order(const char* path, int row_major);
 
 /**
  * Loads a matrix from a file. Loading failure terminates the program.
@@ -290,6 +332,8 @@ void nn_act_relu(mat_t* z);
  * @param z Pointer to matrix of preactivation values
  */
 void nn_act_softmax(mat_t* z);
+
+void nn_act_linear(mat_t* z);
 
 /**
  * Evaluates a feed forward network.

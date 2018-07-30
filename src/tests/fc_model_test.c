@@ -26,18 +26,20 @@ int model_test(void)
 {
 	mat_t x = {
 		.dims = { 1, 768 },
-		.data.f = hay
+#ifdef USE_VECTORIZATION
+		.row_major = 1,
+#endif
 	};
 
 	nn_layer_t L[] = {
 		{
-			.w = nn_mat_load("data/model0/dense.kernel"),
-			.b = nn_mat_load("data/model0/dense.bias"),
+			.w = nn_mat_load_row_order("data/model_fc0/dense.kernel", 0),
+			.b = nn_mat_load_row_order("data/model_fc0/dense.bias", 1),
 			.activation = nn_act_relu
 		},
 		{
-			.w = nn_mat_load("data/model0/dense_1.kernel"),
-			.b = nn_mat_load("data/model0/dense_1.bias"),
+			.w = nn_mat_load_row_order("data/model_fc0/dense_1.kernel", 0),
+			.b = nn_mat_load_row_order("data/model_fc0/dense_1.bias", 1),
 			.activation = nn_act_softmax
 		},
 		{}
@@ -47,9 +49,11 @@ int model_test(void)
 	assert(nn_mat_init(&x) == 0);
 	assert(nn_init(L, &x) == 0);
 
+for (int i = 768; i--;) *nn_mat_e(&x, 0, i) = hay[i];
+
 	mat_t* y;
 	time_t start = time(NULL);
-	while(time(NULL) == start) usleep(10000);
+	while(time(NULL) == start);
 	start = time(NULL);
 
 	int cycles = 0;
@@ -59,18 +63,15 @@ int model_test(void)
 		++cycles;
 	}
 
+    int passed = y->data.f[0] < y->data.f[1] && y->data.f[2] < y->data.f[1];
+
 	Log("%d cps", 1, cycles);
-	Log("%f %f %f", 1,
+	Log("%f %f %f", passed,
 	y->data.f[0],
 	y->data.f[1],
 	y->data.f[2]);
 
-	// mat_t fcw0 = nn_mat_load("model/dense.kernel");
-	// mat_t fcb0 = nn_mat_load("model/dense.bias");
-	// mat_t fcw1 = nn_mat_load("model/dense_1.kernel");
-	// mat_t fcb1 = nn_mat_load("model/dense_1.bias");
-
-	return 0;
+	return !passed;
 }
 
 TEST_BEGIN

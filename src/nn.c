@@ -8,31 +8,41 @@
 #include <unistd.h>
 #include <string.h>
 
-#define e2f(M, i, j) ((M)->data.f[(M)->dims[1] * i + j])
-#define e2f_p(M, i, j) ((M)->data.f + ((M)->dims[1] * i + j))
+#ifdef USE_VECTORIZATION
+#define e2f(M, r, c) ((M)->row_major ? \
+	(M)->data.f + ((r) * (M)->_p_dims[1]) + (c) : \
+	(M)->data.f + ((c) * (M)->_p_dims[0]) + (r))
+#else
+#define e2f(M, r, c) ((M)->data.f + (M)->dims[1] * r + c)
+#endif
 
-static uint8_t* default_indexer(mat_t* src, int row, int col, size_t* size)
+float* nn_default_indexer(mat_t* src, int row, int col, size_t* size)
 {
 	static const float zeros[256] = {};
 
-	*size = sizeof(float) * src->dims[2];
+	int cols = src->dims[1];
+	int depth = src->dims[2] ? src->dims[2] : 1;
+
+	*size = depth;
 
 	// Zero padding for SAME convolutions
 	if (row < 0 || col < 0 ||
 	    row >= src->dims[0] || col >= src->dims[1])
 	{
-		return (uint8_t*)zeros;
+		return (float*)zeros;
 	}
 
-	int cols = src->dims[1];
-	return (uint8_t*)(src->data.f + (row * cols) + col);
+
+	return src->data.f + (row * (cols * depth)) + (col * depth);
 }
+//------------------------------------------------------------------------------
 
 
 static float zero_fill(mat_t* M)
 {
 	return 0;
 }
+//------------------------------------------------------------------------------
 
 
 int nn_mat_init(mat_t* M)
@@ -47,17 +57,45 @@ int nn_mat_init(mat_t* M)
 	M->_size = 1;
 	for (M->_rank = 0; M->_rank < NN_MAT_MAX_DIMS && M->dims[M->_rank];)
 	{
-		M->_size *= M->dims[M->_rank];
+		int d = M->dims[M->_rank];
+#ifdef USE_VECTORIZATION
+		if (d == 1 || M->is_activation_map)
+		{ // prevent the non-major dimension from being padded.
+		  // that would cause NN_MAT_BLOCK_SIZE * (major dim len)
+		  // extra operations which are all useless.
+			M->_p_dims[M->_rank] = d;
+		}
+		else
+		{
+			M->_p_dims[M->_rank] = ceil(d / (float)NN_MAT_BLOCK_SIZE);
+			M->_p_dims[M->_rank] *= NN_MAT_BLOCK_SIZE;
+		}
+
+		M->_size *= M->_p_dims[M->_rank];
+#else
+		M->_size *= d;
+#endif
 		++M->_rank;
 	}
 
 	// size less than 2 is no good
 	assert(M->_rank >= 2);
 
-	size_t total_elements = M->dims[0];
+	size_t total_elements;
+
+#ifdef USE_VECTORIZATION
+	total_elements = M->_p_dims[0];
+#else
+	total_elements = M->dims[0];
+#endif
+
 	for (int i = 1; i < M->_rank; ++i)
 	{
+#ifdef USE_VECTORIZATION
+		total_elements *= M->_p_dims[i];
+#else
 		total_elements *= M->dims[i];
+#endif
 	}
 
 	if (M->data.ptr == NULL)
@@ -76,36 +114,32 @@ int nn_mat_init(mat_t* M)
 
 	return 0;
 }
+//------------------------------------------------------------------------------
 
 
-void nn_mat_mul_conv(mat_t* R, mat_t* A, mat_t* B)
+float* nn_mat_e(mat_t* M, int row, int col)
 {
-	// MxN * NxO = MxO
-
-	assert(R->_rank == A->_rank);
-	assert(A->_rank == B->_rank);
-	if(A->dims[1] != B->dims[0])
-	{
-		fprintf(stderr,
-		        "nn_mat_mul: %dx%d not compatible with %dx%d\n",
-		        A->dims[0], A->dims[1],
-		        B->dims[0], B->dims[1]);
-
-		exit(-1);
-	}
-
-	for (int f = B->dims[1]; f--;)
-	{
-		float dot = 0;
-
-		for (int i = B->dims[0]; i--;)
-		{
-			dot += e2f(A, 0, i) * e2f(B, f, i);
-		}
-
-		R->data.f[f] = dot;
-	}
+		return e2f(M, row, col);
 }
+//------------------------------------------------------------------------------
+
+
+void nn_mat_transpose(mat_t* M)
+{
+	int t;
+#ifdef USE_VECTORIZATION
+	M->row_major = !M->row_major;
+	t = M->_p_dims[0];
+	M->_p_dims[0] = M->_p_dims[1];
+	M->_p_dims[1] = t;
+#endif
+
+	t = M->dims[0];
+	M->dims[0] = M->dims[1];
+	M->dims[1] = t;
+
+}
+//------------------------------------------------------------------------------
 
 
 static inline void _BATCH4_MUL(float* res, float* row_A, int i, int col_B, mat_t* B)
@@ -127,12 +161,8 @@ static inline void _BATCH4_MUL(float* res, float* row_A, int i, int col_B, mat_t
 	_A *= _B;
 
 	*res += _A[0] + _A[1] + _A[2] + _A[3];
-
-	// *res += row_A[i + 0] * b_col[B->dims[1] * (i + 0)];
-	// *res += row_A[i + 1] * b_col[B->dims[1] * (i + 1)];
-	// *res += row_A[i + 2] * b_col[B->dims[1] * (i + 2)];
-	// *res += row_A[i + 3] * b_col[B->dims[1] * (i + 3)];
 }
+//------------------------------------------------------------------------------
 
 
 void nn_mat_mul(mat_t* R, mat_t* A, mat_t* B)
@@ -141,6 +171,9 @@ void nn_mat_mul(mat_t* R, mat_t* A, mat_t* B)
 
 	assert(R->_rank == A->_rank);
 	assert(A->_rank == B->_rank);
+	assert(R->dims[0] == A->dims[0]);
+	assert(R->dims[1] == B->dims[1]);
+
 	if(A->dims[1] != B->dims[0])
 	{
 		fprintf(stderr,
@@ -151,11 +184,53 @@ void nn_mat_mul(mat_t* R, mat_t* A, mat_t* B)
 		exit(-1);
 	}
 
+#ifdef USE_VECTORIZATION
+	int inner_blocks = A->_p_dims[1] / NN_MAT_BLOCK_SIZE;
+
+	if (A->row_major == B->row_major)
+	{
+		fprintf(stderr, "%dx%d and %dx%d matrices are of the same majority\n",
+		A->dims[0], A->dims[1],
+		B->dims[0], B->dims[1]);
+
+		exit(-2);
+	}
+
+	for (int ri = A->dims[0]; ri--;)
+	for (int ci = B->dims[1]; ci--;)
+	{
+		v4f acc = {};
+
+		v4f *a, *b;
+
+		if (A->row_major)
+			a = A->data.v + (ri * A->_p_dims[1] / NN_MAT_BLOCK_SIZE);
+		else
+			a = A->data.v + (ci * A->_p_dims[0] / NN_MAT_BLOCK_SIZE);
+
+		if (B->row_major)
+			b = B->data.v + (ri * B->_p_dims[1] / NN_MAT_BLOCK_SIZE);
+		else
+			b = B->data.v + (ci * B->_p_dims[0] / NN_MAT_BLOCK_SIZE);
+
+		for (int bi = inner_blocks; bi--;)
+		{
+			acc += a[bi] * b[bi];
+		}
+
+		// Sum across all vector elements
+		int start = NN_MAT_BLOCK_SIZE - 1;
+		float sum = acc[start];
+		for(int i = start; i--;) sum += acc[i];
+
+		*e2f(R, ri, ci) = sum;
+	}
+#else
 	for (int ar = A->dims[0]; ar--;)
 	for (int bc = B->dims[1]; bc--;)
 	{
 		float res = 0;
-		float* row = &e2f(A, ar, 0);
+		float* row = e2f(A, ar, 0);
 
 		for (int i = B->dims[0]; i;)
 		{
@@ -181,13 +256,15 @@ void nn_mat_mul(mat_t* R, mat_t* A, mat_t* B)
 			else
 			{
 				i -= 1;
-				res += row[i] * e2f(B, i, bc);
+				res += row[i] * *e2f(B, i, bc);
 			}
 		}
 
-		e2f(R, ar, bc) = res;
+		*e2f(R, ar, bc) = res;
 	}
+#endif
 }
+//------------------------------------------------------------------------------
 
 
 void nn_mat_mul_e(mat_t* R, mat_t* A, mat_t* B)
@@ -208,9 +285,10 @@ void nn_mat_mul_e(mat_t* R, mat_t* A, mat_t* B)
 	for (int r = A->dims[0]; r--;)
 	for (int c = A->dims[1]; c--;)
 	{
-		e2f(R, r, c) = e2f(A, r, c) * e2f(B, r, c);
+		*e2f(R, r, c) = *e2f(A, r, c) * *e2f(B, r, c);
 	}
 }
+//------------------------------------------------------------------------------
 
 
 void nn_mat_add_e(mat_t* R, mat_t* A, mat_t* B)
@@ -230,9 +308,10 @@ void nn_mat_add_e(mat_t* R, mat_t* A, mat_t* B)
 	for (int r = A->dims[0]; r--;)
 	for (int c = A->dims[1]; c--;)
 	{
-		e2f(R, r, c) = e2f(A, r, c) + e2f(B, r, c);
+		*e2f(R, r, c) = *e2f(A, r, c) + *e2f(B, r, c);
 	}
 }
+//------------------------------------------------------------------------------
 
 
 void nn_mat_scl_e(mat_t* R, mat_t* M, float s)
@@ -244,20 +323,23 @@ void nn_mat_scl_e(mat_t* R, mat_t* M, float s)
 	for (int r = M->dims[0]; r--;)
 	for (int c = M->dims[1]; c--;)
 	{
-		e2f(R, r, c) = e2f(M, r, c) * s;
+		*e2f(R, r, c) = *e2f(M, r, c) * s;
 	}
 }
+//------------------------------------------------------------------------------
 
 
 void nn_mat_f(mat_t* R, mat_t* M, float (*func)(float))
 {
 	assert(R->_size == M->_size);
 
-	for (int i = R->_size; i--;)
+	for (int r = M->dims[0]; r--;)
+	for (int c = M->dims[1]; c--;)
 	{
-		R->data.f[i] = func((float)M->data.f[i]);
+		*e2f(R, r, c) = func(*e2f(M, r, c));
 	}
 }
+//------------------------------------------------------------------------------
 
 
 int nn_mat_max(mat_t* M)
@@ -275,17 +357,23 @@ int nn_mat_max(mat_t* M)
 
 	return max_i;
 }
+//------------------------------------------------------------------------------
+
 
 static int is_conv_layer(nn_layer_t* l)
 {
 	if (!l) return -1;
 	return l->filter.kernel.w && l->filter.kernel.h;
 }
+//------------------------------------------------------------------------------
+
 
 static int is_empty_layer(nn_layer_t* l)
 {
 	return l == NULL || l->w.data.ptr == NULL;
 }
+//------------------------------------------------------------------------------
+
 
 int nn_init(nn_layer_t* li, mat_t* x_in)
 {
@@ -313,6 +401,7 @@ int nn_init(nn_layer_t* li, mat_t* x_in)
 
 	return 0;
 }
+//------------------------------------------------------------------------------
 
 
 int nn_clone(nn_layer_t* dst, nn_layer_t* src, mat_t* x_in)
@@ -350,6 +439,7 @@ int nn_clone(nn_layer_t* dst, nn_layer_t* src, mat_t* x_in)
 
 	return 0;
 }
+//------------------------------------------------------------------------------
 
 
 int nn_fc_init(nn_layer_t* li, mat_t* a_in)
@@ -358,33 +448,36 @@ int nn_fc_init(nn_layer_t* li, mat_t* a_in)
 	assert(li);
 	assert(a_in);
 
-	mat_t A = {
-		.dims = { 1, li->b.dims[0] }
-	};
-	res += nn_mat_init(&A) * -10;
-	li->_CA = A;
+	if (li->_z.data.ptr == NULL)
+	{
+		mat_t z = {
+			.dims = { 1, li->w.dims[1] },
+	#ifdef USE_VECTORIZATION
+			.row_major = 1
+	#endif
+		};
 
+		res += nn_mat_init(&z) * -10;
+		li->_z = z;
+	}
+
+	li->_CA = li->_z;
 	li->A = &li->_CA;
 
 	return res;
 }
+//------------------------------------------------------------------------------
 
 
 void nn_fc_ff(nn_layer_t* li, mat_t* a_in)
 {
-	int t = li->A->dims[0];
-	li->A->dims[0] = li->A->dims[1];
-	li->A->dims[1] = t;
 
-	nn_mat_mul(li->A, a_in, &li->w);
+	nn_mat_mul(&li->_z, a_in, &li->w);
 	nn_mat_add_e(li->A, li->A, &li->b);
 
 	li->activation(li->A);
-
-	t = li->A->dims[0];
-	li->A->dims[0] = li->A->dims[1];
-	li->A->dims[1] = t;
 }
+//------------------------------------------------------------------------------
 
 
 int nn_conv_init(nn_layer_t* li, mat_t* a_in)
@@ -395,29 +488,21 @@ int nn_conv_init(nn_layer_t* li, mat_t* a_in)
 
 	int a_rows = a_in->dims[0];
 	int a_cols = a_in->dims[1];
-	int depth_in = li->w.dims[2];
-	int depth_out = li->w.dims[3];
+	int depth_out = li->w.dims[1];
 
 	{ // Setup matrices for weights and biases
-		li->w.dims[0] = li->w.dims[0] * li->w.dims[1] * depth_in;
-		li->w.dims[1] = depth_out;
-		li->w.dims[2] = li->w.dims[3] = 0;
 		res += nn_mat_init(&li->w) * -10;
-
-		if (res) return res;
-
-		mat_t b = {
-			.dims = { depth_out, 1 }
-		};
-		res += nn_mat_init(&b) * -20;
-		li->b = b;
+		res += nn_mat_init(&li->b) * -20;
 
 		if (res) return res;
 	}
 
 	{ // Setup preactivation vector
 		mat_t z = {
-			.dims = { depth_out, 1 }
+			.dims = { 1, depth_out },
+#ifdef USE_VECTORIZATION
+			.row_major = 1,
+#endif
 		};
 		res += nn_mat_init(&z) * -30;
 		li->_z = z;
@@ -427,7 +512,10 @@ int nn_conv_init(nn_layer_t* li, mat_t* a_in)
 
 	{ // Setup patch vector
 		mat_t patch = {
-			.dims = { 1, li->w.dims[0] }
+			.dims = { 1, li->w.dims[0] },
+#ifdef USE_VECTORIZATION
+			.row_major = 1,
+#endif
 		};
 		res += nn_mat_init(&patch) * -40;
 		li->_conv_patch = patch;
@@ -447,13 +535,20 @@ int nn_conv_init(nn_layer_t* li, mat_t* a_in)
 		}
 
 		// if no custom indexing function is selected use the builtin
-		if (!f.pixel_indexer) li->filter.pixel_indexer = default_indexer;
+		if (!f.pixel_indexer) li->filter.pixel_indexer = nn_default_indexer;
 
 		int ca_rows = ((a_rows - f.kernel.h + 2 * pad_row) / f.stride.row) + 1;
 		int ca_cols = ((a_cols - f.kernel.w + 2 * pad_col) / f.stride.col) + 1;
 
+		ca_rows = ca_rows ? ca_rows : 1;
+		ca_cols = ca_cols ? ca_cols : 1;
+
 		mat_t CA = {
-			.dims = { ca_rows, ca_cols, depth_out }
+			.dims = { ca_rows, ca_cols, depth_out },
+#ifdef USE_VECTORIZATION
+			.row_major = 1,
+			.is_activation_map = 1,
+#endif
 		};
 		res += nn_mat_init(&CA) * -50;
 		li->_CA = CA;
@@ -472,7 +567,8 @@ int nn_conv_init(nn_layer_t* li, mat_t* a_in)
 					li->_CA.dims[0] / li->pool.op.kernel.h,
 					li->_CA.dims[1] / li->pool.op.kernel.w,
 					depth_out
-				}
+				},
+				.is_activation_map = 1,
 			};
 			res += nn_mat_init(&PA) * -60;
 			li->pool._PA = PA;
@@ -480,7 +576,7 @@ int nn_conv_init(nn_layer_t* li, mat_t* a_in)
 			// if no custom indexing function is selected use the builtin
 			if (!li->pool.op.pixel_indexer)
 			{
-				li->pool.op.pixel_indexer = default_indexer;
+				li->pool.op.pixel_indexer = nn_default_indexer;
 			}
 
 			li->A = &li->pool._PA;
@@ -491,6 +587,7 @@ int nn_conv_init(nn_layer_t* li, mat_t* a_in)
 
 	return res;
 }
+//------------------------------------------------------------------------------
 
 
 void nn_conv_patch(mat_t* patch, mat_t* src, conv_op_t op)
@@ -503,17 +600,20 @@ void nn_conv_patch(mat_t* patch, mat_t* src, conv_op_t op)
 	{
 		int ri = op.corner.row + row;
 		int ci = op.corner.col + col;
-		int i = row * op.kernel.w + col;
-		size_t pix_size;
-		uint8_t* pixel_chan = op.pixel_indexer(src,
-		                                       ri,
-		                                       ci,
-		                                       &pix_size);
+		size_t depth;
+		float* pixel_chan = op.pixel_indexer(src, ri, ci, &depth);
 
-		uint8_t* patch_bytes = (uint8_t*)patch->data.ptr;
-		memcpy(patch_bytes + (pix_size * i), pixel_chan, pix_size);
+		int i = col * depth;
+		int j = row * op.kernel.w * depth;
+		float* pile = nn_mat_e(patch, 0, j + i);
+
+		for (int d = depth; d--;)
+		{
+			pile[d] = pixel_chan[d];
+		}
 	}
 }
+//------------------------------------------------------------------------------
 
 
 void nn_conv_ff(nn_layer_t* li, mat_t* a_in)
@@ -533,8 +633,8 @@ void nn_conv_ff(nn_layer_t* li, mat_t* a_in)
 	}
 
 	// For each pile of channels in the pool...
-	for (int p_row = li->_CA.dims[0]; p_row--;)
-	for (int p_col = li->_CA.dims[1]; p_col--;)
+	for (int p_row = 0; p_row < li->_CA.dims[0]; ++p_row)
+	for (int p_col = 0; p_col < li->_CA.dims[1]; ++p_col)
 	{
 		op.corner.row = p_row * op.stride.row - pad_row;
 		op.corner.col = p_col * op.stride.col - pad_col;
@@ -546,14 +646,19 @@ void nn_conv_ff(nn_layer_t* li, mat_t* a_in)
 		nn_mat_mul(&li->_z, patch, &li->w);
 		nn_mat_add_e(&li->_z, &li->_z, &li->b);
 
-		size_t feature_depth;
-		float* z_pile = (float*)op.pixel_indexer(&li->_CA, p_row, p_col, &feature_depth);
+		// activate
+		li->activation(&li->_z);
 
-		memcpy(z_pile, li->_z.data.f, feature_depth);
+		size_t depth;
+		float* z_pile = op.pixel_indexer(&li->_z, 0, 0, &depth);
+		float* ca_pile = op.pixel_indexer(&li->_CA, p_row, p_col, &depth);
+
+		for (int d = depth; d--;)
+		{
+			ca_pile[d] = z_pile[d];
+		}
 	}
 
-	// activate
-	li->activation(&li->_CA);
 
 	// Apply pooling if specified
 	switch (li->pool.type)
@@ -565,6 +670,7 @@ void nn_conv_ff(nn_layer_t* li, mat_t* a_in)
 		case POOLING_NONE:;
 	}
 }
+//------------------------------------------------------------------------------
 
 
 void nn_conv_max_pool(mat_t* pool, mat_t* src, conv_op_t op)
@@ -585,8 +691,7 @@ void nn_conv_max_pool(mat_t* pool, mat_t* src, conv_op_t op)
 	{
 		// get the pile address
 		size_t size;
-		float* pool_pile = (float*)op.pixel_indexer(
-			pool, p_row, p_col, &size);
+		float* pool_pile = op.pixel_indexer(pool, p_row, p_col, &size);
 
 		// For each kernel window position
 		for (int k_row = op.kernel.w; k_row--;)
@@ -595,8 +700,7 @@ void nn_conv_max_pool(mat_t* pool, mat_t* src, conv_op_t op)
 			int s_row = p_row * op.stride.row + k_row;
 			int s_col = p_col * op.stride.col + k_col;
 
-			float* src_pile = (float*)op.pixel_indexer(
-				src, s_row, s_col, &size);
+			float* src_pile = op.pixel_indexer(src, s_row, s_col, &size);
 
 			for (int chan = pool->dims[2]; chan--;)
 			{
@@ -608,13 +712,27 @@ void nn_conv_max_pool(mat_t* pool, mat_t* src, conv_op_t op)
 		}
 	}
 }
+//------------------------------------------------------------------------------
 
 
 mat_t nn_mat_load(const char* path)
 {
-	mat_t M = { };
+	return nn_mat_load_row_order(path, 1);
+}
+//------------------------------------------------------------------------------
+
+
+mat_t nn_mat_load_row_order(const char* path, int row_major)
+{
+	mat_t M = {
+#ifdef USE_VECTORIZATION
+		.row_major = row_major
+#endif
+	};
 	uint8_t dims = 0;
 	int fd = open(path, O_RDONLY);
+
+	// NOTE: bias indexing is effed up
 
 	// open file, read the dimensions
 	if (fd < 0) goto abort;
@@ -627,14 +745,33 @@ mat_t nn_mat_load(const char* path)
 	if (dims == 1)
 	{
 		M.dims[1] = 1;
+		nn_mat_transpose(&M);
+#ifdef USE_VECTORIZATION
+		M.row_major = !M.row_major;
+#endif
+	}
+
+	// TODO: clean up, loading is not the right place
+	// to reformat the parameters dimensions
+	else if (dims >= 4)
+	{
+		int out_depth = M.dims[3];
+		int in_size = M.dims[0] * M.dims[1] * M.dims[2];
+		M.dims[0] = in_size;
+		M.dims[1] = out_depth;
+		M.dims[2] = M.dims[3] = 0;
+		M._rank = 2;
 	}
 
 	// allocate space for the matrix
 	if (nn_mat_init(&M)) goto abort;
 
 	// read the entire matrix
-	size_t M_size = sizeof(float) * M._size;
-	if (read(fd, M.data.ptr, M_size) != M_size) goto abort;
+	for (int ri = 0; ri < M.dims[0]; ++ri)
+	for (int ci = 0; ci < M.dims[1]; ++ci)
+	{
+		read(fd, e2f(&M, ri, ci), sizeof(float));
+	}
 
 	close(fd);
 
@@ -646,32 +783,44 @@ abort:
 	exit(-13);
 	return M;
 }
+//------------------------------------------------------------------------------
 
 
 static float _sigmoid_e(float v)
 {
 	return 1 / (1 + powf(M_E, -v));
 }
+//------------------------------------------------------------------------------
+
+
 void nn_act_sigmoid(mat_t* z)
 {
 	nn_mat_f(z, z, _sigmoid_e);
 }
+//------------------------------------------------------------------------------
 
 
 static float _relu_e(float v)
 {
 	return v > 0 ? v : 0;
 }
+//------------------------------------------------------------------------------
+
+
 void nn_act_relu(mat_t* z)
 {
 	nn_mat_f(z, z, _relu_e);
 }
+//------------------------------------------------------------------------------
 
 
 static float _softmax_num_f(float v)
 {
 	return powf(M_E, v);
 }
+//------------------------------------------------------------------------------
+
+
 void nn_act_softmax(mat_t* z)
 {
 	nn_mat_f(z, z, _softmax_num_f);
@@ -680,6 +829,14 @@ void nn_act_softmax(mat_t* z)
 	float denom = 1.f / sum ;
 	nn_mat_scl_e(z, z, denom);
 }
+//------------------------------------------------------------------------------
+
+
+void nn_act_linear(mat_t* z)
+{
+	return;
+}
+//------------------------------------------------------------------------------
 
 
 mat_t* nn_predict(nn_layer_t* l, mat_t* x)

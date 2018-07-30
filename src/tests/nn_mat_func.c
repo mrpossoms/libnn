@@ -28,27 +28,30 @@ float sigmoid_f(float v)
 
 int mat_mul(void)
 {
-	float i[] = {
-		1, 1, 1,
-	};
 	mat_t I = {
 		.dims = { 1, 3 },
-		._rank = 2,
-		._size = 3,
-		.data = i,
 	};
 
 	mat_t R = {
 		.dims = { 1, 3 }
 	};
-	nn_mat_init(&R);
+
+	assert(nn_mat_init(&R) == 0);
+	assert(nn_mat_init(&I) == 0);
+
+	for (int c = 3; c--;)
+	{
+		float* e = nn_mat_e(&I, 0, c);
+		*e = 1.f;
+	}
 
 	nn_mat_f(&R, &I, sigmoid_f);
 
 	for (int i = 3; i--;)
 	{
-		if (R.data.f[i] != 0.5) {
-			Log("R[%d] -> %f\n", 0, i, R.data.f[i]);
+		float e = *nn_mat_e(&R, 0, i);
+		if (e != 0.5) {
+			Log("R[%d] -> %f\n", 0, i, e);
 			return -1;
 		}
 	}

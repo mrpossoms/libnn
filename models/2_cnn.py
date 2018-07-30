@@ -13,135 +13,105 @@
 # You should have received a copy of the GNU General Public License
 # along with libnn.  If not, see <https://www.gnu.org/licenses/>.
 
-import tensorflow as tf
+import struct
 import numpy as np
+import tensorflow as tf
+from helpers import serialize_matrix
 
-tf.set_random_seed(0) # make libnn debugging easier
+# tf.set_random_seed(0) # make libnn debugging easier
 
-
-def example(label):
-    """
-    Returns exactly one randomly generated 9x9x1 example for the specified
-    label.
-    :param label: 0 generates a uniformly random matrix with a mean aronud 0
-                  1 generates a diagonal edge (top to bottom) with 1's on the top half
-                  2 generates a diagonal edge (top to bottom) with 1's on the bottom half
-    :return: numpy 9x9x1 array
-    """
-    x = np.zeros((9, 9, 1))
-    y_int = np.random.randint(-3, 3)
-
-    if label is 0:
-        return np.random.random_sample((9, 9, 1)) - 0.5
-
-    for yi in range(0, 9):
-        for xi in range(0, 9):
-            _y = xi + y_int
-
-            if label is 1:
-                x[yi][xi][0] = 1.0 if yi < _y else 0
-            if label is 2:
-                x[yi][xi][0] = 1.0 if yi > _y else 0
-
-    return x
+def read_idx(filename):
+    with open(filename, 'rb') as f:
+        zero, data_type, dims = struct.unpack('>HBB', f.read(4))
+        shape = tuple(struct.unpack('>I', f.read(4))[0] for d in range(dims))
+        return np.fromstring(f.read(), dtype=np.uint8).reshape(shape)
 
 
-def one_hot(label):
-    """
-    Takes an integer label, and generates the corresponding one hot vector
-    :param label: integer [0, 2]
-    :return: One hot numpy array of shape 1x1x3
-    """
-    y = np.zeros((1, 1, 3))
-    y[0][0][label] = 1
-    return y
+def to_one_hot(labels):
+    Y = np.zeros((labels.shape[0], 10))
+
+    for yi in range(0, labels.shape[0]):
+        Y[yi][labels[yi]] = 1
+    return Y
 
 
-def ts(n=100):
-    """
-    Generates a random training set of examples X and labels Y
-    :param n: number of examples to be included
-    :return: tuple of two numpy arrays, examples and labels respectively
-    """
-    X = []
-    Y = []
+def ts(root):
+    X = (read_idx(root + '/images-idx3-ubyte') / 255.0)
+    Y = to_one_hot(read_idx(root + '/labels-idx1-ubyte'))
 
-    for _ in range(n):
-        label = np.random.randint(0, 3)
-        X += [example(label)]
-        Y += [one_hot(label)]
+    return X.reshape((X.shape[0], 28 * 28)), Y
 
-    return np.array(X), np.array(Y)
+ts_X, ts_Y = ts('/Users/kirk/code/nn.h/data/model_conv2/ds/train')
 
+from PIL import Image
 
-def serialize_matrix(m, fp):
-    """
-    Writes a numpy array into fp in the simple format that
-    libnn's nn_mat_load() function understands
-    :param m: numpy matrix
-    :param fp: file stream
-    :return: void
-    """
-    import struct
-
-    # write the header
-    fp.write(struct.pack('b', len(m.shape)))
-    for d in m.shape:
-        fp.write(struct.pack('i', d))
-
-    # followed by each element
-    for e in m.flatten():
-        fp.write(struct.pack('f', e))
+def show_example():
+	i = np.random.randint(0, ts_X.shape[0])
+	print(i)
+	img = (ts_X[i].reshape((28, 28)) * 255).astype(np.uint8)
+	img = Image.fromarray(img, 'L')
+	img.show(title=str(ts_Y[i]))
 
 
-#    ___      _
-#   / __| ___| |_ _  _ _ __
-#   \__ \/ -_)  _| || | '_ \
-#   |___/\___|\__|\_,_| .__/
-#                     |_|
+X = tf.placeholder(tf.float32, shape=[None, 784])
+Y = tf.placeholder(tf.float32, shape=[None, 10])
 
-# Generate the training set, define placeholders for examples and labels
-ts_X, ts_Y = ts()
-X = tf.placeholder(tf.float32, shape=[None, 9, 9, 1])
-Y = tf.placeholder(tf.float32, shape=[None, 1, 1, 3])
-
-# file the kernel (weight) and bias tensors away in a dictionary
-# for easy access when saving
 P = {
-    'c0_kernel': tf.Variable(tf.truncated_normal([3, 3, 3, 3])) * 0.01,
-    'c0_bias'  : tf.Variable(tf.constant(0.1, shape=[3])),
-    'c1_kernel': tf.Variable(tf.truncated_normal([7, 7, 3, 3])) * 0.01,
-    'c1_bias'  : tf.Variable(tf.constant(0.1, shape=[3]))
+    'c0_kernel': tf.Variable(tf.truncated_normal([3, 3, 1, 32], stddev=0.1)),
+    'c0_bias':   tf.Variable(tf.constant(0.1, shape=[32])),
+
+    'c1_kernel': tf.Variable(tf.truncated_normal([5, 5, 32, 64], stddev=0.1)),
+    'c1_bias': tf.Variable(tf.constant(0.1, shape=[64])),
+
+    'c2_kernel': tf.Variable(tf.truncated_normal([4, 4, 64, 10])),
+    'c2_bias': tf.Variable(tf.constant(0.1, shape=[1, 10])),
 }
 
-# Compute convolution, pre-activations and activations for convolutional layer 0
-c0_z = tf.nn.conv2d(X, P['c0_kernel'], [1, 1, 1, 1], 'VALID') + P['c0_bias']
+x_image = tf.reshape(X, [-1, 28, 28, 1])
+
+# Layer 0
+c0_z = tf.nn.conv2d(x_image, P['c0_kernel'], [1, 1, 1, 1], 'VALID') + P['c0_bias']
 c0_a = tf.nn.relu(c0_z)
+c0_p = tf.nn.max_pool(c0_a, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1], padding='VALID')
+a = c0_p
 
-# Compute convolution, pre-activations and activations for convolutional layer 1
-c1_z = tf.nn.conv2d(c0_a, P['c1_kernel'], [1, 1, 1, 1], 'VALID') + P['c1_bias']
-p = tf.nn.softmax(c1_z)
+# Layer 1
+c1_z = tf.nn.conv2d(a, P['c1_kernel'], [1, 1, 1, 1], 'VALID') + P['c1_bias']
+c1_a = tf.nn.relu(c1_z)
+c1_p = tf.nn.max_pool(c1_a, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1], padding='VALID')
+a = c1_p
 
-# Define loss, using cross entropy and l2 loss for regularization
-cross_entropy = tf.nn.softmax_cross_entropy_with_logits_v2(labels=Y, logits=p)
-loss = tf.reduce_mean(cross_entropy) + tf.nn.l2_loss(P['c0_kernel']) + tf.nn.l2_loss(P['c0_kernel'])
+# Layer 2
+c2_z = tf.nn.conv2d(a, P['c2_kernel'], [1, 1, 1, 1], 'VALID') + P['c2_bias']
+h = tf.reshape(c2_z, [-1, 10])
 
-optimize = tf.train.AdamOptimizer(learning_rate=0.1).minimize(loss)
+cross_entropy = tf.nn.softmax_cross_entropy_with_logits_v2(labels=Y, logits=h)
+loss = tf.reduce_mean(cross_entropy)
+
+correct_prediction = tf.equal(tf.argmax(h, 1), tf.argmax(Y, 1))
+accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
+
+optimize = tf.train.AdamOptimizer(1e-4).minimize(loss)
 
 sess = tf.Session()
 sess.run(tf.global_variables_initializer())
 
 # run gradient descent to fit parameters
-for e in range(1000):
-    sess.run(optimize, feed_dict={X: ts_X, Y: ts_Y})
+batch_size = 50
+sess = tf.Session()
+sess.run(tf.global_variables_initializer())
 
+for e in range(3000):
+    i = np.random.randint(0, ts_X.shape[0] - batch_size)
+    sub_ts_X = ts_X[i:i + batch_size]
+    sub_ts_Y = ts_Y[i:i + batch_size]
+
+    sess.run(optimize, feed_dict={X: sub_ts_X, Y: sub_ts_Y})
     if e % 100 == 0:
-        print(sess.run(loss, feed_dict={X: ts_X, Y: ts_Y}))
-
-# If learning was successful, should print a rank-3 identity matrix
-for c in range(3):
-    p_ = sess.run(p, feed_dict={X: np.array([example(c)])})
-    print((p_ >= p_.max()) * 1)
+        train_h = sess.run(h, feed_dict={X: sub_ts_X, Y: sub_ts_Y})
+        # train_prediction = sess.run(correct_prediction, feed_dict={X: sub_ts_X, Y: sub_ts_Y})
+        train_accuracy = sess.run(accuracy, feed_dict={X: sub_ts_X, Y: sub_ts_Y})
+        print('step %d, training accuracy %f' % (e, train_accuracy))
 
 # Save the learned parameters
 for key in P:
@@ -150,42 +120,18 @@ for key in P:
     with open('/var/model/' + file_name, mode='wb') as fp:
         serialize_matrix(sess.run(P[key]), fp)
 
-# Hardcoded class examples for testing
-class0 = np.array([[0.4373552677664668,0.4779668005977227,0.1930176971271862,0.15935195050556805,-0.03454942695534857,0.022374068795748436,0.06405680026965888,0.39244537551760794,-0.2735623389910957,0.38858326609909133,0.2389487947151785,0.48374378419428665,-0.2873746681814301,0.15689272126594211,-0.2247380377239223,-0.36435552100792035,-0.113894519160612,-0.433816069482448,-0.047338430355342576,-0.0074328193130708264,0.25158455017447046,-0.1316869118355698,0.32732382729263276,-0.03149328270894902,0.40673487883180215,0.23059401025303827,-0.14761593512965798,-0.489243676698937,0.4205509690622199,0.307691127548238,0.19089984721281394,0.39117070269955867,-0.32715124571459187,0.1411097709774165,0.10011676261464031,0.005543642303233787,0.12302408086427319,-0.42839800593512833,-0.03371917793608259,0.44079954354622175,-0.19602342865999123,0.44025648310799415,0.4663607283882778,0.10492501453134695,-0.34127869123826937,-0.18989831312044736,0.2029763412847888,0.2215775047424121,0.22286667629166013,0.17640028827130871,0.20423948382178803,-0.11416520245672268,0.4351949295559211,0.16930399873131985,-0.3953896478574027,-0.05084905409556473,-0.25921158228950436,-0.14211563779966496,-0.42265289391845084,-0.36933147427508617,-0.49382288624234916,-0.044746257776212994,-0.014855572304796283,0.4080228481416096,-0.3220690518534908,0.1394160420002314,0.09462338821082628,0.2779240661556387,0.26627358437614124,0.1280167941356074,-0.4852490528273933,0.3672766997201402,0.24093681779077813,0.4829553576078329,-0.40584452872711907,-0.2034742481867905,-0.13570583777988487,0.1493635626701023,-0.17886701602813115,0.19386606894576586,-0.36245899007683546]
-]).reshape(1,9,9,1)
+# test
+print('Done, evaluating')
+ts_X, ts_Y = ts('/Users/kirk/code/nn.h/data/model_conv2/ds/test')
 
-class1 = np.array([
-    0, 1, 1, 1, 1, 1, 1, 1, 1,
-    0, 0, 1, 1, 1, 1, 1, 1, 1,
-    0, 0, 0, 1, 1, 1, 1, 1, 1,
-    0, 0, 0, 0, 1, 1, 1, 1, 1,
-    0, 0, 0, 0, 0, 1, 1, 1, 1,
-    0, 0, 0, 0, 0, 0, 1, 1, 1,
-    0, 0, 0, 0, 0, 0, 0, 1, 1,
-    0, 0, 0, 0, 0, 0, 0, 0, 1,
-    0, 0, 0, 0, 0, 0, 0, 0, 0,
-]).reshape((1,9,9,1))
+correct = 0
+incorrect = 0
+for i in range(0, ts_X.shape[0]):
+    hi = sess.run(h, feed_dict={X: ts_X[i].reshape((1, 784)) })
+    if hi.argmax() == ts_Y[i].argmax():
+        correct += 1
+    else:
+        incorrect += 1
 
-class2 = np.array([
-    1, 1, 1, 0, 0, 0, 0, 0, 0,
-    1, 1, 1, 1, 0, 0, 0, 0, 0,
-    1, 1, 1, 1, 1, 0, 0, 0, 0,
-    1, 1, 1, 1, 1, 1, 0, 0, 0,
-    1, 1, 1, 1, 1, 1, 1, 0, 0,
-    1, 1, 1, 1, 1, 1, 1, 1, 0,
-    1, 1, 1, 1, 1, 1, 1, 1, 1,
-    1, 1, 1, 1, 1, 1, 1, 1, 1,
-    1, 1, 1, 1, 1, 1, 1, 1, 1,
-]).reshape((1,9,9,1))
-
-# print out predictions, and pre-activation z vectors for debugging
-for c in range(3):
-    h_ = sess.run(p, feed_dict={X: [class0,class1,class2][c]})
-    print(str(c) + " prediction")
-    print(h_)
-
-    print(str(c) + " 0_z vvv")
-    print(sess.run(c0_z, feed_dict={X: [class0,class1,class2][c]}))
-
-    print(str(c) + " 1_z vvv")
-    print(sess.run(c1_z, feed_dict={X: [class0,class1,class2][c]}))
+print("%d / %d (right/wrong)" % (correct, incorrect))
+print("%f%% accuracy" % (correct / ts_X.shape[0]))

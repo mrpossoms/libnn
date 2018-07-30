@@ -19,21 +19,14 @@
 #include "../nn.h"
 #include "../nn.c"
 
-uint8_t* indexer(mat_t* src, int row, int col, size_t* size)
+
+void mat_copy(mat_t* dst, float* src)
 {
-	static const float zeros[256] = {};
-
-	*size = sizeof(float) * src->dims[2];
-
-	// Zero padding for SAME convolutions
-	if (row < 0 || col < 0 ||
-	    row >= src->dims[0] || col >= src->dims[1])
+	for (int i = dst->dims[0]; i--;)
+	for (int j = dst->dims[1]; j--;)
 	{
-		return (uint8_t*)zeros;
+		*nn_mat_e(dst, i, j) = src[i * dst->dims[1] + j];
 	}
-
-	int cols = src->dims[1];
-	return (uint8_t*)(src->data.f + (row * cols) + col);
 }
 
 
@@ -46,10 +39,13 @@ int conv_patch(void)
 	};
 	mat_t X0 = {
 		.dims = { 3, 3, 1 },
-		._rank = 3,
-		._size = 9,
-		.data.f = x0_s
+		.is_activation_map = 1,
+#ifdef USE_VECTORIZATION
+		.row_major = 1,
+#endif
 	};
+	assert(nn_mat_init(&X0) == 0);
+	mat_copy(&X0, x0_s);
 
 	float x1_s[] = {
 		1, 1, 1,
@@ -58,10 +54,13 @@ int conv_patch(void)
 	};
 	mat_t X1 = {
 		.dims = { 3, 3, 1 },
-		._rank = 3,
-		._size = 9,
-		.data.f = x1_s
+		.is_activation_map = 1,
+#ifdef USE_VECTORIZATION
+		.row_major = 1,
+#endif
 	};
+	assert(nn_mat_init(&X1) == 0);
+	mat_copy(&X1, x1_s);
 
 	float w_s[] = {
 		-1, 0, 1,
@@ -73,31 +72,29 @@ int conv_patch(void)
 	};
 	nn_layer_t conv = {
 		.w = {
-			.dims = { 3, 3, 1, 1 },
-			.data.f = w_s
+			.dims = { 9, 1 },
+		},
+		.b = {
+			.dims = { 1, 1 },
 		},
 		.filter = {
 			.kernel = { 3, 3 },
 			.stride = { 1, 1 },
-			.pixel_indexer = indexer
+			.pixel_indexer = nn_default_indexer
 		},
-		.activation = nn_act_sigmoid
+		.activation = nn_act_relu
 	};
 	assert(nn_conv_init(&conv, &X0) == 0);
+	mat_copy(&conv.w, w_s);
 
-	// conv_op_t op = {
-	// 	.kernel = { 3, 3 },
-	// 	.stride = { 1, 1 },
-	// 	.pixel_indexer = indexer
-// };/
 
 	nn_conv_ff(&conv, &X0);
 	Log("A[0] -> %f\n", 1, conv.A->data.f[0]);
-	assert(conv.A->data.f[0] > 0.5);
+	assert(conv.A->data.f[0] == 3);
 
 	nn_conv_ff(&conv, &X1);
 	Log("A[0] -> %f\n", 1, conv.A->data.f[0]);
-	assert(conv.A->data.f[0] <= 0.5);
+	assert(conv.A->data.f[0] == 0);
 
 	return 0;
 }
