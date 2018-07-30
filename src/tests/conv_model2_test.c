@@ -177,6 +177,7 @@ int model_test(void)
     assert(nn_init(L, &x) == 0);
     int right = 0, wrong = 0, total = 0;
 
+    time_t start = time(NULL);
     for(int i = 10000; i--;)
     {
         float* f = idx3_next();
@@ -214,11 +215,14 @@ int model_test(void)
         // A_1->data.f[9]
         // );
     }
+    time_t duration = time(NULL) - start;
+
 
     float acc = right / (float)total;
 
     Log("right/wrong: %d/%d", acc > 0.8, right, wrong);
     Log("accuracy: %f%%", acc > 0.8, acc);
+    Log("CPS: %d", 1, 10000 / duration);
 
     return 0;
 }

@@ -196,8 +196,8 @@ void nn_mat_mul(mat_t* R, mat_t* A, mat_t* B)
 		exit(-2);
 	}
 
-	for (int ri = 0; ri < A->dims[0]; ++ri)
-	for (int ci = 0; ci < B->dims[1]; ++ci)
+	for (int ri = A->dims[0]; ri--;)
+	for (int ci = B->dims[1]; ci--;)
 	{
 		v4f acc = {};
 
@@ -213,12 +213,17 @@ void nn_mat_mul(mat_t* R, mat_t* A, mat_t* B)
 		else
 			b = B->data.v + (ci * B->_p_dims[0] / NN_MAT_BLOCK_SIZE);
 
-		for (int bi = 0; bi < inner_blocks; ++bi)
+		for (int bi = inner_blocks; bi--;)
 		{
 			acc += a[bi] * b[bi];
 		}
 
-		*e2f(R, ri, ci) =  acc[0] + acc[1] + acc[2] + acc[3];
+		// Sum across all vector elements
+		int start = NN_MAT_BLOCK_SIZE - 1;
+		float sum = acc[start];
+		for(int i = start; i--;) sum += acc[i];
+
+		*e2f(R, ri, ci) = sum;
 	}
 #else
 	for (int ar = A->dims[0]; ar--;)
@@ -483,15 +488,10 @@ int nn_conv_init(nn_layer_t* li, mat_t* a_in)
 
 	int a_rows = a_in->dims[0];
 	int a_cols = a_in->dims[1];
-	// int depth_in = li->w.dims[2];
 	int depth_out = li->w.dims[1];
 
 	{ // Setup matrices for weights and biases
-		// li->w.dims[0] = li->w.dims[0] * li->w.dims[1] * depth_in;
-		// li->w.dims[1] = depth_out;
-		// li->w.dims[2] = li->w.dims[3] = 0;
 		res += nn_mat_init(&li->w) * -10;
-
 		res += nn_mat_init(&li->b) * -20;
 
 		if (res) return res;
@@ -600,18 +600,16 @@ void nn_conv_patch(mat_t* patch, mat_t* src, conv_op_t op)
 	{
 		int ri = op.corner.row + row;
 		int ci = op.corner.col + col;
-		int i = row * op.kernel.w + col;
 		size_t depth;
 		float* pixel_chan = op.pixel_indexer(src, ri, ci, &depth);
 
+		int i = col * depth;
+		int j = row * op.kernel.w * depth;
+		float* pile = nn_mat_e(patch, 0, j + i);
+
 		for (int d = depth; d--;)
 		{
-			// TODO: cleanup
-			int i = col * depth;
-			int j = row * op.kernel.w * depth;
-			float* pile = nn_mat_e(patch, 0, j + i);
 			pile[d] = pixel_chan[d];
-			// printf("[%d + %d] = %f\n", i, j, pile[d]);
 		}
 	}
 }
@@ -635,9 +633,6 @@ void nn_conv_ff(nn_layer_t* li, mat_t* a_in)
 	}
 
 	// For each pile of channels in the pool...
-	// for (int p_row = li->_CA.dims[0]; p_row--;)
-	// for (int p_col = li->_CA.dims[1]; p_col--;)
-	// TODO
 	for (int p_row = 0; p_row < li->_CA.dims[0]; ++p_row)
 	for (int p_col = 0; p_col < li->_CA.dims[1]; ++p_col)
 	{
@@ -661,7 +656,6 @@ void nn_conv_ff(nn_layer_t* li, mat_t* a_in)
 		for (int d = depth; d--;)
 		{
 			ca_pile[d] = z_pile[d];
-			// ca_pile[d] = *nn_mat_e(&li->_z, p_row, d);
 		}
 	}
 

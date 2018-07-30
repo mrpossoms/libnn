@@ -24,15 +24,13 @@
 #define USE_VECTORIZATION
 
 #define NN_MAT_MAX_DIMS 4
-#define NN_MAT_BLOCK_SIZE 4
+#define NN_MAT_BLOCK_SIZE 16
 
 #ifdef USE_VECTORIZATION
 typedef float v4f __attribute__ ((vector_size(NN_MAT_BLOCK_SIZE * 4)));
 #endif
 
 struct mat_t {
-	const char* from_file;
-
 	/**
 	 * @brief Int array specifying the length of each
 	 *        orthoganal dimension. Must be null terminated
