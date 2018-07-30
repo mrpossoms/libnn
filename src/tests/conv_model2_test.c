@@ -25,7 +25,7 @@
 #define MAX_POOL_HALF {          \
     .type = POOLING_MAX,         \
     .op = {                      \
-       .padding = PADDING_SAME,  \
+       .padding = PADDING_VALID,  \
        .stride = { 2, 2 },       \
        .kernel = { 2, 2 },       \
     }                            \
@@ -164,9 +164,9 @@ int model_test(void)
         {
          .w = nn_mat_load_row_order("data/model_conv2/c2.kernel", 0),
          .b = nn_mat_load_row_order("data/model_conv2/c2.bias", 1),
-         .activation = nn_act_softmax,
+         .activation = nn_act_linear,
          .filter = {
-             .kernel = { 5, 5 },
+             .kernel = { 4, 4 },
              .stride = { 1, 1 },
              .padding = PADDING_VALID,
          },
@@ -177,7 +177,7 @@ int model_test(void)
     assert(nn_init(L, &x) == 0);
     int right = 0, wrong = 0, total = 0;
 
-    for(int i = 1000; i--;)
+    for(int i = 10000; i--;)
     {
         float* f = idx3_next();
 

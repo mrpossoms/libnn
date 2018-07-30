@@ -335,6 +335,8 @@ void nn_act_relu(mat_t* z);
  */
 void nn_act_softmax(mat_t* z);
 
+void nn_act_linear(mat_t* z);
+
 /**
  * Evaluates a feed forward network.
  * @param  layers - Pointer to an array of initialized layers, with the final

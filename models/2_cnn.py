@@ -45,11 +45,12 @@ ts_X, ts_Y = ts('/Users/kirk/code/nn.h/data/model_conv2/ds/train')
 
 from PIL import Image
 
-i = np.random.randint(0, ts_X.shape[0])
-print(i)
-img = (ts_X[i].reshape((28, 28)) * 255).astype(np.uint8)
-img = Image.fromarray(img, 'L')
-img.show(title=str(ts_Y[i]))
+def show_example():
+	i = np.random.randint(0, ts_X.shape[0])
+	print(i)
+	img = (ts_X[i].reshape((28, 28)) * 255).astype(np.uint8)
+	img = Image.fromarray(img, 'L')
+	img.show(title=str(ts_Y[i]))
 
 
 X = tf.placeholder(tf.float32, shape=[None, 784])
@@ -62,7 +63,7 @@ P = {
     'c1_kernel': tf.Variable(tf.truncated_normal([5, 5, 32, 64], stddev=0.1)),
     'c1_bias': tf.Variable(tf.constant(0.1, shape=[64])),
 
-    'c2_kernel': tf.Variable(tf.truncated_normal([5, 5, 64, 10])),
+    'c2_kernel': tf.Variable(tf.truncated_normal([4, 4, 64, 10])),
     'c2_bias': tf.Variable(tf.constant(0.1, shape=[1, 10])),
 }
 
@@ -71,13 +72,13 @@ x_image = tf.reshape(X, [-1, 28, 28, 1])
 # Layer 0
 c0_z = tf.nn.conv2d(x_image, P['c0_kernel'], [1, 1, 1, 1], 'VALID') + P['c0_bias']
 c0_a = tf.nn.relu(c0_z)
-c0_p = tf.nn.max_pool(c0_a, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1], padding='SAME')
+c0_p = tf.nn.max_pool(c0_a, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1], padding='VALID')
 a = c0_p
 
 # Layer 1
 c1_z = tf.nn.conv2d(a, P['c1_kernel'], [1, 1, 1, 1], 'VALID') + P['c1_bias']
 c1_a = tf.nn.relu(c1_z)
-c1_p = tf.nn.max_pool(c1_a, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1], padding='SAME')
+c1_p = tf.nn.max_pool(c1_a, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1], padding='VALID')
 a = c1_p
 
 # Layer 2
