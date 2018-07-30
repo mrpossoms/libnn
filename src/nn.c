@@ -540,6 +540,9 @@ int nn_conv_init(nn_layer_t* li, mat_t* a_in)
 		int ca_rows = ((a_rows - f.kernel.h + 2 * pad_row) / f.stride.row) + 1;
 		int ca_cols = ((a_cols - f.kernel.w + 2 * pad_col) / f.stride.col) + 1;
 
+		ca_rows = ca_rows ? ca_rows : 1;
+		ca_cols = ca_cols ? ca_cols : 1;
+
 		mat_t CA = {
 			.dims = { ca_rows, ca_cols, depth_out },
 #ifdef USE_VECTORIZATION
@@ -564,7 +567,8 @@ int nn_conv_init(nn_layer_t* li, mat_t* a_in)
 					li->_CA.dims[0] / li->pool.op.kernel.h,
 					li->_CA.dims[1] / li->pool.op.kernel.w,
 					depth_out
-				}
+				},
+				.is_activation_map = 1,
 			};
 			res += nn_mat_init(&PA) * -60;
 			li->pool._PA = PA;

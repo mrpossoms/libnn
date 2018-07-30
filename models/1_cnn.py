@@ -15,6 +15,7 @@
 
 import tensorflow as tf
 import numpy as np
+from helpers import serialize_matrix
 
 tf.set_random_seed(0) # make libnn debugging easier
 
@@ -72,26 +73,6 @@ def ts(n=100):
         Y += [one_hot(label)]
 
     return np.array(X), np.array(Y)
-
-
-def serialize_matrix(m, fp):
-    """
-    Writes a numpy array into fp in the simple format that
-    libnn's nn_mat_load() function understands
-    :param m: numpy matrix
-    :param fp: file stream
-    :return: void
-    """
-    import struct
-
-    # write the header
-    fp.write(struct.pack('b', len(m.shape)))
-    for d in m.shape:
-        fp.write(struct.pack('i', d))
-
-    # followed by each element
-    for e in m.flatten():
-        fp.write(struct.pack('f', e))
 
 
 #    ___      _
