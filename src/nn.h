@@ -150,6 +150,8 @@ typedef struct {
 } nn_layer_t;
 
 
+typedef float (*nn_cost_func_t)(const mat_t* h, const mat_t* y);
+
 /**
  * @brief Allocates memory for matrix described by 'M'
  * @param M - description of desired matrix
@@ -174,6 +176,8 @@ float* nn_mat_e(mat_t* M, int row, int col);
 void nn_mat_transpose(mat_t* M);
 
 float* nn_default_indexer(mat_t* src, int row, int col, size_t* size);
+
+float* nn_gen_indexer(mat_t* src, int idx_count, int idx[idx_count]);
 
 /**
  * @brief Performs matrix multiplication A x B storing the result in R
@@ -279,6 +283,7 @@ int nn_fc_init(nn_layer_t* li, mat_t* a_in);
  */
 void nn_fc_ff(nn_layer_t* li, mat_t* a_in);
 
+
 /**
  * Allocates matrices needed for the convolutional layer, and also
  * computes _size and _rank. 'filter', 'stride', 'w' and 'b' members
@@ -335,6 +340,8 @@ void nn_act_softmax(mat_t* z);
 
 void nn_act_linear(mat_t* z);
 
+float nn_cost_logistic(const mat_t* h, const mat_t* y);
+
 /**
  * Evaluates a feed forward network.
  * @param  layers - Pointer to an array of initialized layers, with the final
@@ -343,5 +350,12 @@ void nn_act_linear(mat_t* z);
  * @return        Pointer to a vector of predictions.
  */
 mat_t* nn_predict(nn_layer_t* layers, mat_t* x);
+
+
+/**
+ * Computes the cost function of a network starting at 'layers'  given an x, y
+ * example and label pair.
+ */ 
+float nn_compute_cost(nn_layer_t* layers, nn_cost_func_t J, const mat_t* x, const mat_t* y); 
 
 #endif

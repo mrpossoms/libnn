@@ -37,6 +37,26 @@ float* nn_default_indexer(mat_t* src, int row, int col, size_t* size)
 }
 //------------------------------------------------------------------------------
 
+float* nn_gen_indexer(mat_t* src, int idx_count, int idx[idx_count])
+{
+	float* off = src->data.f;
+	
+	// compute offsets for a single index incrementation for each dimension
+	for (int i = 0; i < idx_count; ++i)
+	{
+		size_t dim_off = 1;
+
+		for (int j = i + 1; j < idx_count; ++j)
+		{
+			dim_off *= src->dims[j];
+		}
+
+		off += dim_off * idx[i];
+	}
+
+	return off;
+}
+//------------------------------------------------------------------------------
 
 static float zero_fill(mat_t* M)
 {
@@ -838,6 +858,22 @@ void nn_act_linear(mat_t* z)
 }
 //------------------------------------------------------------------------------
 
+float nn_cost_logistic(const mat_t* h, const mat_t* y)
+{
+	assert(h->_rank == y->_rank);
+	assert(h->_size == y->_size);
+
+	float cost = 0;
+
+	for (int i = 0; i < h->_size; ++i)
+	{
+		float h_i = h->data.f[i], y_i = y->data.f[i];
+		cost += y_i * logf(h_i) + (1 - y_i) * logf(1 - h_i);
+	}
+
+	return cost;
+}
+//------------------------------------------------------------------------------
 
 mat_t* nn_predict(nn_layer_t* l, mat_t* x)
 {

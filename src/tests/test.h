@@ -53,7 +53,7 @@ static inline void Log(const char* format, int isGood, ...){
 		sprintf(txt, "\t\033[1;31m%s\033[0m\n", buf);
 	}
 
-	write(1, txt, strlen(txt) + 1);
+	assert(write(1, txt, strlen(txt) + 1) > 0);
 
 	return;
 }
