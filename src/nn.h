@@ -220,6 +220,8 @@ void nn_mat_scl_e(mat_t* R, mat_t* M, float s);
  */
 void nn_mat_add_e(mat_t* R, mat_t* A, mat_t* B);
 
+void nn_num_sub_mat_e(mat_t* R, float n, mat_t* M);
+
 /**
  * Applies function element wise to all values in matrix M.
  * @param R -  Result of func on M. R must be the same shape as M.
@@ -326,21 +328,28 @@ void nn_conv_ff(nn_layer_t* li, mat_t* a_in);
  */
 void nn_act_sigmoid(mat_t* z);
 
+void nn_act_sigmoid_grad(mat_t* a, mat_t* g);
+
 /**
  * https://en.wikipedia.org/wiki/Rectifier_(neural_networks)
  * @param z Pointer to matrix of preactivation values
  */
 void nn_act_relu(mat_t* z);
 
+void nn_act_relu_grad(mat_t* a, mat_t* g);
+
 /**
  * https://en.wikipedia.org/wiki/Softmax_function
  * @param z Pointer to matrix of preactivation values
  */
 void nn_act_softmax(mat_t* z);
+void nn_act_softmax_grad(mat_t* a, mat_t* g);
 
 void nn_act_linear(mat_t* z);
 
 float nn_cost_logistic(const mat_t* h, const mat_t* y);
+
+float nn_cost_cross_entropy(const mat_t* h, const mat_t* y);
 
 /**
  * Evaluates a feed forward network.

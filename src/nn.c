@@ -334,6 +334,17 @@ void nn_mat_add_e(mat_t* R, mat_t* A, mat_t* B)
 //------------------------------------------------------------------------------
 
 
+void nn_num_sub_mat_e(mat_t* R, float n, mat_t* M)
+{
+	assert(R->_rank == M->_rank);
+	
+	for (int i = 0; i < M->_size; ++i)
+	{
+		R->data.f[i] = n - M->data.f[i];
+	}
+}
+//------------------------------------------------------------------------------
+
 void nn_mat_scl_e(mat_t* R, mat_t* M, float s)
 {
 	assert(R->_rank == M->_rank);
@@ -820,6 +831,14 @@ void nn_act_sigmoid(mat_t* z)
 //------------------------------------------------------------------------------
 
 
+void nn_act_sigmoid_grad(mat_t* a, mat_t* g)
+{
+	nn_num_sub_mat_e(g, 1.f, a);
+	nn_mat_mul_e(g, g, a);	
+}
+//------------------------------------------------------------------------------
+
+
 static float _relu_e(float v)
 {
 	return v > 0 ? v : 0;
@@ -830,6 +849,16 @@ static float _relu_e(float v)
 void nn_act_relu(mat_t* z)
 {
 	nn_mat_f(z, z, _relu_e);
+}
+//------------------------------------------------------------------------------
+
+
+void nn_act_relu_grad(mat_t* a, mat_t* g)
+{
+	for (int i = 0; i < a->_size; ++i)
+	{
+		g->data.f[i] = a->data.f[i] > 0 ? 1 : 0;
+	}
 }
 //------------------------------------------------------------------------------
 
